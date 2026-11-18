@@ -24,7 +24,8 @@ On mobile, these controls appear as on-screen buttons.
 ## Why dribbling has no lag
 
 - The server stores only who has the ball. Every client draws the ball in that player's hand on its own, so the ball never waits on the network.
-- Your own crossovers show up instantly, and the server is told afterward.
+- Every client also bends the ball handler's arms toward the ball, using Roblox's built-in IKControl. The dribble hand rides each bounce, and both hands hold the ball on a shot. No animation data crosses the network.
+- Your own crossovers and shot windups show up instantly, and the server is told afterward.
 - When the ball is loose (shots and rebounds), the server runs its physics, so nobody can fake a basket.
 - Shots and steals are dice rolls based on timing and distance, like in 2K. That hides lag better than exact hitboxes.
 

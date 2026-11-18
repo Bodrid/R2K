@@ -10,6 +10,15 @@ local Hoops = {
 	DRIBBLE_HZ = 2, -- bounces per second
 	CROSS_TIME = 0.18, -- how long a crossover takes
 
+	-- Ball path, relative to the holder's HumanoidRootPart
+	DRIBBLE_SIDE = 1.5, -- how far out to the side the ball bounces
+	DRIBBLE_FORWARD = 1.2,
+	DRIBBLE_TOP = -0.6, -- top of the bounce (ball center), below the root
+	HAND_LOW = -0.8, -- the dribble hand follows the ball down to here, then waits
+	GATHER_HEIGHT = 3.2, -- where the ball sits during the shot windup; the shot launches from here
+	GATHER_FORWARD = 1.2, -- in front of the face, in reach of R15 arms
+	GATHER_TIME = 0.2, -- seconds to bring the ball up into the shot
+
 	PERFECT_HOLD = 0.6, -- hold shoot this long for a perfect release
 	SHOT_WINDOW = 0.3, -- releasing this far off perfect is the worst timing
 	GREEN = 0.85, -- timing quality at or above this always goes in

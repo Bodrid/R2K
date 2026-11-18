@@ -65,11 +65,13 @@ local function give(player)
 	ball.Anchored = true
 	ball.CanCollide = false
 	ball:SetAttribute("Hand", "Right") -- set before Holder; clients reset to Right on a new holder too
+	ball:SetAttribute("Shooting", nil)
 	ball:SetAttribute("Holder", player.UserId)
 	lastShot = nil
 end
 
 local function release(position, velocity)
+	ball:SetAttribute("Shooting", nil)
 	ball:SetAttribute("Holder", nil)
 	ball.Anchored = false
 	ball.CanCollide = true
@@ -97,7 +99,8 @@ local function shoot(player, root, holdTime)
 	end
 
 	lastShot = { player = player, points = dist >= Hoops.THREE_DIST and 3 or 2 }
-	local from = root.Position + Vector3.new(0, 3.5, 0) -- above the head so the ball clears the shooter
+	-- Launch from the gather spot clients draw (above the head, so the ball clears the shooter).
+	local from = (root.CFrame * CFrame.new(0, Hoops.GATHER_HEIGHT, -Hoops.GATHER_FORWARD)).Position
 	local t = Hoops.flightTime(dist)
 	release(from, Hoops.launchVelocity(from, target, t, Vector3.new(0, -workspace.Gravity, 0)))
 end
@@ -116,6 +119,7 @@ action.OnServerEvent:Connect(function(player, kind, value)
 	elseif kind == "shootStart" then
 		if h == player then
 			shootStarts[player] = os.clock()
+			ball:SetAttribute("Shooting", true) -- so everyone else sees the gather
 		end
 	elseif kind == "shoot" then
 		local started = shootStarts[player]
