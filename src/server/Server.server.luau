@@ -47,6 +47,8 @@ local action = new("RemoteEvent", { Name = "Action", Parent = ReplicatedStorage 
 local shootStarts = {} -- [player] = os.clock() when they started holding shoot
 local nextSteal = {} -- [player] = os.clock() when they may try again
 local reaching = {} -- [player] = os.clock() until their reach stays live
+local nextBlock = {} -- [player] = os.clock() when they may block again
+local blocking = {} -- [player] = os.clock() until their block stays live
 local lastShot = nil -- { player, points } until the ball is caught
 local pickupLockUntil, pickupLockPlayer = 0, nil
 local prevY = ball.Position.Y
@@ -92,6 +94,22 @@ local function release(position, velocity, lockOnly)
 	ball:SetNetworkOwner(nil) -- server simulates loose balls, so a client can't fake a make
 	pickupLockUntil, pickupLockPlayer = os.clock() + Hoops.PICKUP_LOCK, lockOnly
 	prevY = position.Y
+end
+
+-- A block knocks the ball away from the blocker. Nobody can grab it for a moment, and a shot can't score.
+local function swat(position, blockerRoot)
+	lastShot = nil
+	table.clear(blocking)
+	release(position, blockerRoot.CFrame.LookVector * Hoops.SWAT_SPEED + Vector3.new(0, 8, 0))
+end
+
+-- The player's root if their reach or block (in `live`) is still going; otherwise forget it.
+local function liveRoot(live, player)
+	local r = os.clock() <= live[player] and rootOf(player)
+	if not r then
+		live[player] = nil
+	end
+	return r
 end
 
 local function shoot(player, root, holdTime)
@@ -167,6 +185,18 @@ action.OnServerEvent:Connect(function(player, kind, value, at)
 			nextSteal[player] = os.clock() + Hoops.STEAL_COOLDOWN
 			reaching[player] = os.clock() + Hoops.REACH_TIME
 		end
+	elseif kind == "block" then
+		if h ~= player and os.clock() >= (nextBlock[player] or 0) then
+			nextBlock[player] = os.clock() + Hoops.BLOCK_COOLDOWN - 0.1 -- slack so the client's own cooldown never disagrees
+			player.Character:SetAttribute("BlockAt", workspace:GetServerTimeNow()) -- everyone plays the animation
+			-- Only near the ball handler (or a shooter while the shot is up) does the ball go live for contact,
+			-- until the animation ends. Anywhere else it's just the animation.
+			local carrier = h or (lastShot and lastShot.player)
+			local cRoot = carrier and carrier ~= player and rootOf(carrier)
+			if cRoot and (cRoot.Position - root.Position).Magnitude <= Hoops.BLOCK_RANGE then
+				blocking[player] = os.clock() + Hoops.BLOCK_TIME
+			end
+		end
 	end
 end)
 
@@ -178,24 +208,37 @@ RunService.Heartbeat:Connect(function()
 			release(CENTER, Vector3.zero) -- holder left or died
 			return
 		end
-		-- Live reaches: the server knows exactly where the ball is (side, bounce height, crossover, gather),
-		-- so only real contact counts. It knocks the ball loose as a physics ball; whoever gets there first keeps it.
-		for p, liveUntil in reaching do
-			local r = rootOf(p)
-			if os.clock() > liveUntil or not r then
-				reaching[p] = nil
-			else
-				local spot = heldSpot(hRoot)
-				if Hoops.reaches(r.CFrame, spot) then
-					release(spot, ((spot - hRoot.Position) * FLAT).Unit * Hoops.POKE_SPEED + Vector3.new(0, 10, 0), h)
-					return
-				end
+		-- Live blocks and reaches: the server knows exactly where the ball is (side, bounce height, crossover,
+		-- gather), so only real contact counts.
+		local spot = heldSpot(hRoot)
+		for p in blocking do
+			local r = liveRoot(blocking, p)
+			if r and p ~= h and Hoops.blocks(r.CFrame, spot) then
+				swat(spot, r)
+				return
+			end
+		end
+		for p in reaching do
+			local r = liveRoot(reaching, p)
+			if r and Hoops.reaches(r.CFrame, spot) then
+				-- A steal knocks it loose away from the handler; whoever gets there first keeps it.
+				release(spot, ((spot - hRoot.Position) * FLAT).Unit * Hoops.POKE_SPEED + Vector3.new(0, 10, 0), h)
+				return
 			end
 		end
 		return
 	end
 
 	local pos = ball.Position
+	if lastShot then -- a shot in the air: live blocks check contact against the server's own physics ball
+		for p in blocking do
+			local r = liveRoot(blocking, p)
+			if r and p ~= lastShot.player and Hoops.blocks(r.CFrame, pos) then
+				swat(pos, r)
+				return
+			end
+		end
+	end
 	if lastShot and prevY > RIM.Y and pos.Y <= RIM.Y and ((pos - RIM) * FLAT).Magnitude < Hoops.RIM_RADIUS then
 		local stats = lastShot.player:FindFirstChild("leaderstats")
 		if stats then
@@ -234,4 +277,6 @@ Players.PlayerRemoving:Connect(function(player)
 	shootStarts[player] = nil
 	nextSteal[player] = nil
 	reaching[player] = nil
+	nextBlock[player] = nil
+	blocking[player] = nil
 end)

@@ -55,4 +55,14 @@ assert(not Hoops.reaches(defenderAt(2, -2.5), left), "a crossover away from the 
 assert(not Hoops.reaches(defenderAt(0, 3), right), "no reaching around from behind")
 assert(not Hoops.reaches(defenderAt(0, -3), Hoops.gatherSpot(handler)), "a shot windup is out of reach")
 
+-- Block contact: raised hands must touch the ball where it is right now.
+local gathered = Hoops.gatherSpot(handler)
+assert(Hoops.blocks(defenderAt(0, -2.5), gathered), "in your face, a block reaches the windup")
+assert(not Hoops.blocks(defenderAt(0, -5), gathered), "from too far, a block can't reach the windup")
+assert(not Hoops.blocks(defenderAt(0, -2.5), right), "a dribble is too low to block")
+local released = gathered + Vector3.new(0, 3, 0) -- the shot just left the hands
+local jumped = CFrame.lookAt(Vector3.new(0, Y + 3, -2.5), Vector3.new(0, Y + 3, 0))
+assert(not Hoops.blocks(defenderAt(0, -2.5), released), "standing, the released shot is over your hands")
+assert(Hoops.blocks(jumped, released), "a timed jump gets to the released shot")
+
 print("hoops.spec: all passed")

@@ -31,6 +31,12 @@ local Hoops = {
 	STEAL_COOLDOWN = 1,
 	MAX_BACKDATE = 0.25, -- how far back the server accepts a crossover start time (covers ping)
 	POKE_SPEED = 14, -- how hard a steal knocks the ball loose
+	BLOCK_RANGE = 8, -- block only does anything this close to the ball handler (or a shooter, ball in the air)
+	BLOCK_REACH = 1.5, -- how close the raised hands must get to the ball; small, so you have to be in their face
+	BLOCK_HEIGHT = 3.6, -- raised hands, above the root (the jump adds to it)
+	BLOCK_TIME = 0.5, -- block animation length, about one jump; the ball is live for contact this long
+	BLOCK_COOLDOWN = 1.2,
+	SWAT_SPEED = 25, -- how hard a block knocks the ball away
 	PASS_DIST = 25, -- passes go this far in the direction you face
 	PASS_TIME = 0.35, -- flight time; short, so passes stay flat under Roblox gravity
 	PICKUP_RANGE = 4,
@@ -93,6 +99,16 @@ end
 -- Can the defender's hands (just in front of them) touch a ball at `spot`?
 function Hoops.reaches(defenderCFrame, spot)
 	return (spot - offset(defenderCFrame, 0, 0, 1.5)).Magnitude <= Hoops.STEAL_REACH
+end
+
+-- Between a blocker's raised hands. Clients draw the hands here; the server judges blocks from it.
+function Hoops.blockHands(blockerCFrame)
+	return offset(blockerCFrame, 0, Hoops.BLOCK_HEIGHT, 0.4)
+end
+
+-- Can a blocker's raised hands touch a ball at `spot`?
+function Hoops.blocks(blockerCFrame, spot)
+	return (spot - Hoops.blockHands(blockerCFrame)).Magnitude <= Hoops.BLOCK_REACH
 end
 
 -- Velocity that lands on `to` after `t` seconds: to = from + v*t + gravity*t²/2.

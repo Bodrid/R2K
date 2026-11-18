@@ -1,7 +1,7 @@
--- Client: input, the shot meter, and animating the ball handler every frame.
--- Every client draws the ball and bends the holder's arms itself, from the server's attributes and the
--- shared server clock, so nothing animated waits on the network and everyone (server included) agrees
--- where the ball is. Your own crossovers and shot gathers start instantly; the server hears after.
+-- Client: input, the shot meter, and animating players every frame (the ball handler and blockers).
+-- Every client draws the ball and bends arms itself, from the server's attributes and the shared
+-- server clock, so nothing animated waits on the network and everyone (server included) agrees where
+-- the ball is. Your own crossovers, gathers and blocks start instantly; the server hears after.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ContextActionService = game:GetService("ContextActionService")
@@ -29,37 +29,33 @@ local fill = new("Frame", { AnchorPoint = Vector2.new(0, 1), Position = UDim2.fr
 new("Frame", { Size = UDim2.new(1, 8, 0, 3), Position = UDim2.new(0, -4, 1 - Hoops.PERFECT_HOLD / METER_MAX, -1), BackgroundColor3 = Color3.fromRGB(60, 220, 90), BorderSizePixel = 0, Parent = meter })
 gui.Parent = me:WaitForChild("PlayerGui")
 
--- Arms: Roblox's IK solver pulls each hand to a target. Targets are local world-space attachments.
+-- Arms: Roblox's IK solver pulls each hand to a target (a local world-space attachment).
+-- One rig per character that needs one, made on first use.
 -- shortcut: procedural arms look stiff for flashy moves; play keyframed animations for spins/step-backs later
-local targets, poles, iks = {}, {}, {}
-for side in SIDE do
-	targets[side] = new("Attachment", { Name = side .. "HandTarget", Parent = workspace.Terrain })
-	poles[side] = new("Attachment", { Name = side .. "ElbowPole", Parent = workspace.Terrain })
-end
+local rigs = {} -- [character] = { [side] = { target, pole, ik } }
 
--- Fresh IKControls per possession: the old holder's character may already be destroyed.
-local function attachArms(char)
-	for _, ik in iks do
-		ik:Destroy()
-	end
-	table.clear(iks)
-	local hum = char and char:FindFirstChildOfClass("Humanoid")
-	if not hum then
-		return
-	end
-	for side in SIDE do
-		local upperArm, hand = char:FindFirstChild(side .. "UpperArm"), char:FindFirstChild(side .. "Hand")
-		if upperArm and hand then -- R15 only; an R6 holder still dribbles, just without arm motion
-			iks[side] = new("IKControl", { Type = Enum.IKControlType.Position, ChainRoot = upperArm, EndEffector = hand, Target = targets[side], Pole = poles[side], Weight = 0, Parent = hum })
+local function rigFor(char)
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not rigs[char] and hum then
+		local rig = {}
+		for side in SIDE do
+			local arm = { target = new("Attachment", { Parent = workspace.Terrain }), pole = new("Attachment", { Parent = workspace.Terrain }) }
+			local upperArm, hand = char:FindFirstChild(side .. "UpperArm"), char:FindFirstChild(side .. "Hand")
+			if upperArm and hand then -- R15 only; R6 characters play without arm motion
+				arm.ik = new("IKControl", { Type = Enum.IKControlType.Position, ChainRoot = upperArm, EndEffector = hand, Target = arm.target, Pole = arm.pole, Weight = 0, Parent = hum })
+			end
+			rig[side] = arm
 		end
+		rigs[char] = rig
 	end
+	return rigs[char]
 end
 
 -- While I hold the ball I predict my own state (server-clock times) so my moves start instantly;
 -- for everyone else I read the server's attributes.
 local myHand, myFromHand, myCrossAt, myGatherAt = "Right", "Right", 0, nil
+local myBlockAt = 0
 local shootStart = nil -- os.clock() when I started holding shoot (for the meter)
-local lastHolder = nil
 
 local function iHaveBall()
 	return ball:GetAttribute("Holder") == me.UserId
@@ -76,42 +72,68 @@ RunService.RenderStepped:Connect(function()
 	if shootStart then
 		fill.Size = UDim2.fromScale(1, math.min((os.clock() - shootStart) / METER_MAX, 1))
 	end
+	local now = workspace:GetServerTimeNow()
+
+	for char, rig in rigs do -- drop rigs of characters that left or respawned
+		if not char:IsDescendantOf(workspace) then
+			for _, arm in rig do
+				arm.target:Destroy()
+				arm.pole:Destroy()
+				if arm.ik then
+					arm.ik:Destroy()
+				end
+			end
+			rigs[char] = nil
+		end
+	end
 
 	local id = ball:GetAttribute("Holder")
 	local holder = id and Players:GetPlayerByUserId(id)
-	local char = holder and holder.Character
-	local root = char and char:FindFirstChild("HumanoidRootPart")
-	if not root then
-		if lastHolder then
-			attachArms(nil)
+	for _, player in Players:GetPlayers() do
+		local char = player.Character
+		local root = char and char:FindFirstChild("HumanoidRootPart")
+		if not root then
+			continue
 		end
-		lastHolder = nil
-		return
-	end
-	if holder ~= lastHolder then
-		lastHolder = holder
-		attachArms(char)
-	end
+		local cf = root.CFrame
 
-	-- Ball: the same function the server judges steals with, on the shared server clock.
-	local mine = holder == me
-	local hand = (if mine then myHand else ball:GetAttribute("Hand")) or "Right"
-	local fromHand = (if mine then myFromHand else ball:GetAttribute("FromHand")) or hand
-	local crossAt = (if mine then myCrossAt else ball:GetAttribute("CrossAt")) or 0
-	local gatherAt = if mine then myGatherAt else ball:GetAttribute("GatherAt")
-	local cf = root.CFrame
-	local pos, a, g = Hoops.ballSpot(cf, hand, fromHand, crossAt, gatherAt, workspace:GetServerTimeNow())
-	ball.CFrame = CFrame.new(pos)
+		-- Ball: the same function the server judges steals and blocks with, on the shared server clock.
+		local pos, a, g, hand
+		if player == holder then
+			local mine = player == me
+			hand = (if mine then myHand else ball:GetAttribute("Hand")) or "Right"
+			local fromHand = (if mine then myFromHand else ball:GetAttribute("FromHand")) or hand
+			local crossAt = (if mine then myCrossAt else ball:GetAttribute("CrossAt")) or 0
+			local gatherAt = if mine then myGatherAt else ball:GetAttribute("GatherAt")
+			pos, a, g = Hoops.ballSpot(cf, hand, fromHand, crossAt, gatherAt, now)
+			ball.CFrame = CFrame.new(pos)
+		end
 
-	-- Hands: the dribble hand rides the top of each bounce; both hold the ball on a gather.
-	local handLow = root.Position.Y + Hoops.HAND_LOW
-	for side, x in SIDE do
-		local dribble = if a < 1 then (if side == hand then a else 1 - a) else (if side == hand then 1 else 0)
-		local onTop = Vector3.new(pos.X, math.max(pos.Y + Hoops.BALL_RADIUS, handLow), pos.Z)
-		targets[side].WorldPosition = onTop:Lerp(pos + cf.RightVector * x * (Hoops.BALL_RADIUS + 0.2), g)
-		poles[side].WorldPosition = cf * Vector3.new(x * 3, -1, 1.5) -- elbows bend out and back
-		if iks[side] then
-			iks[side].Weight = math.max(dribble, g)
+		-- Block: arms snap straight up, hold, and come down over BLOCK_TIME (the jump does the rest).
+		local blockAt = (if player == me then myBlockAt else char:GetAttribute("BlockAt")) or 0
+		local b = (now - blockAt) / Hoops.BLOCK_TIME
+		local up = if b >= 0 and b < 1 then math.min(1, 4 * b, 4 * (1 - b)) else 0
+
+		local rig = (up > 0 or pos or rigs[char]) and rigFor(char)
+		if rig then
+			local handLow = cf.Position.Y + Hoops.HAND_LOW
+			for side, x in SIDE do
+				local arm = rig[side]
+				local weight = up
+				if up > 0 or not pos then
+					arm.target.WorldPosition = Hoops.blockHands(cf) + cf.RightVector * x * 0.6
+					arm.pole.WorldPosition = cf * Vector3.new(x * 3, 1.5, 0) -- elbows out to the sides
+				else -- the dribble hand rides the top of each bounce; both hold the ball on a gather
+					local dribble = if a < 1 then (if side == hand then a else 1 - a) else (if side == hand then 1 else 0)
+					local onTop = Vector3.new(pos.X, math.max(pos.Y + Hoops.BALL_RADIUS, handLow), pos.Z)
+					arm.target.WorldPosition = onTop:Lerp(pos + cf.RightVector * x * (Hoops.BALL_RADIUS + 0.2), g)
+					arm.pole.WorldPosition = cf * Vector3.new(x * 3, -1, 1.5) -- elbows bend out and back
+					weight = math.max(dribble, g)
+				end
+				if arm.ik then
+					arm.ik.Weight = weight
+				end
+			end
 		end
 	end
 end)
@@ -148,6 +170,20 @@ ContextActionService:BindAction("Pass", function(_, state)
 	end
 end, true, Enum.KeyCode.R, Enum.KeyCode.ButtonB)
 
+-- Block: jump with both arms up. Anyone can do it anywhere; it only matters near the ball handler.
+ContextActionService:BindAction("Block", function(_, state)
+	local now = workspace:GetServerTimeNow()
+	if state == Enum.UserInputState.Begin and not iHaveBall() and now - myBlockAt >= Hoops.BLOCK_COOLDOWN then
+		myBlockAt = now
+		local hum = me.Character and me.Character:FindFirstChildOfClass("Humanoid")
+		if hum then
+			hum.Jump = true
+		end
+		action:FireServer("block")
+	end
+end, true, Enum.KeyCode.F, Enum.KeyCode.ButtonY)
+
 ContextActionService:SetTitle("ShootOrSteal", "Shoot")
 ContextActionService:SetTitle("Crossover", "Cross")
 ContextActionService:SetTitle("Pass", "Pass")
+ContextActionService:SetTitle("Block", "Block")

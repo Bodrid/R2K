@@ -19,6 +19,7 @@ To play 1v1 locally, open the Test tab in Studio, set Clients and Servers to 2 p
 | Steal (when defending) | E | X |
 | Crossover | Q | LB |
 | Pass (goes where you face) | R | B |
+| Block (jump, arms up) | F | Y |
 
 On mobile, these controls appear as on-screen buttons.
 
@@ -30,6 +31,7 @@ On mobile, these controls appear as on-screen buttons.
 - The ball only becomes a real physics ball, run by the server, when it's loose: shots, rebounds, passes and pokes. Nobody can fake a basket, and anyone near a pass can pick it off.
 - The dribble runs on Roblox's synced server clock, so the server and every player work out the exact same ball position: side, bounce height, crossover and shot windup.
 - Steals: pressing steal near the ball handler opens a reach that lasts a split second. The server checks real contact between your hands and the ball every frame, with no dice roll. Contact knocks the ball loose, and whoever gets there first keeps it. A ball low in its bounce slips under the reach, and crossing over away from the defender protects it.
+- Blocks: everyone sees the blocker jump with arms up. Pressing block near the ball handler, or near a shooter while the shot is up, makes the ball live for contact until the animation ends. If the raised hands touch the ball, whether it's held up for a shot or already in the air, it's swatted away and the shot can't score. Anywhere else, block is just the animation.
 - Shot odds come from timing and distance, like in 2K.
 
 All tuning values live in `src/shared/Hoops.luau`.
