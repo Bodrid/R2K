@@ -11,6 +11,18 @@ You need [Rojo](https://rojo.space) 7.4 or newer.
 
 To play 1v1 locally, open the Test tab in Studio, set Clients and Servers to 2 players, and press Start.
 
+## Play against real people
+
+A game starts as soon as two players are in a server. It's first to 21, with shots worth 2 or 3. After a make, the other player checks the ball at the top of the key. The winner gets a win on the scoreboard, and a new game starts. Alone in a server, you can shoot around while the screen says "Waiting for an opponent...".
+
+To put it on Roblox:
+
+1. In Studio, choose File → Publish to Roblox.
+2. Set the server size to 2 players, so every server is one 1v1 and Roblox pairs up strangers for you. In the Creator Dashboard, go to your experience, then Places, then the start place, then Access. Set the max visitor count to 2, and set server fill to fill each server to the max if that option is offered. Studio has the same setting under Game Settings → Places. Roblox moves these menus around, so the names may differ.
+3. Make the experience public in the Creator Dashboard, or keep it private and invite friends.
+
+With more than 2 players in a server, it plays as cutthroat: everyone for themselves, and the ball goes to a random other player after a make.
+
 ## Controls
 
 | Action | Keyboard | Gamepad |

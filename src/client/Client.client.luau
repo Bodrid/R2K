@@ -27,6 +27,12 @@ local gui = new("ScreenGui", { Name = "ShotMeter", ResetOnSpawn = false })
 local meter = new("Frame", { Size = UDim2.fromOffset(16, 120), Position = UDim2.new(0.5, 60, 0.5, -60), BackgroundColor3 = Color3.new(0.1, 0.1, 0.1), Visible = false, Parent = gui })
 local fill = new("Frame", { AnchorPoint = Vector2.new(0, 1), Position = UDim2.fromScale(0, 1), Size = UDim2.fromScale(1, 0), BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0, Parent = meter })
 new("Frame", { Size = UDim2.new(1, 8, 0, 3), Position = UDim2.new(0, -4, 1 - Hoops.PERFECT_HOLD / METER_MAX, -1), BackgroundColor3 = Color3.fromRGB(60, 220, 90), BorderSizePixel = 0, Parent = meter })
+-- Game status from the server: waiting, first to 21, who won.
+local status = ReplicatedStorage:WaitForChild("Status")
+local banner = new("TextLabel", { Size = UDim2.fromOffset(320, 36), Position = UDim2.new(0.5, -160, 0, 8), BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 0.4, TextColor3 = Color3.new(1, 1, 1), TextScaled = true, Font = Enum.Font.GothamBold, Text = status.Value, Parent = gui })
+status.Changed:Connect(function(text)
+	banner.Text = text
+end)
 gui.Parent = me:WaitForChild("PlayerGui")
 
 -- Arms: Roblox's IK solver pulls each hand to a target (a local world-space attachment).

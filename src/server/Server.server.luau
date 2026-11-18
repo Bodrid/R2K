@@ -103,6 +103,60 @@ local function swat(position, blockerRoot)
 	release(position, blockerRoot.CFrame.LookVector * Hoops.SWAT_SPEED + Vector3.new(0, 8, 0))
 end
 
+-- Game flow: a game starts once two players are in. First to GAME_TO wins; after a make, the other
+-- player checks the ball up at the top of the key. With more than 2 in a server it plays as cutthroat.
+-- shortcut: no take-it-back after a steal or rebound and no out of bounds; add them if 1v1s feel loose
+local status = new("StringValue", { Name = "Status", Value = "Waiting for an opponent...", Parent = ReplicatedStorage })
+local CHECK = Vector3.new(0, Hoops.FLOOR_Y + 3, RIM.Z + Hoops.THREE_DIST + 4) -- top of the key, behind the arc
+local inGame, nextGameAt = false, 0
+
+local function checkBall(offense)
+	local defenseSpot = CHECK + Vector3.new(0, 0, -4) -- between the offense and the rim
+	for _, p in Players:GetPlayers() do
+		if rootOf(p) then
+			p.Character:PivotTo(if p == offense then CFrame.lookAt(CHECK, Vector3.new(RIM.X, CHECK.Y, RIM.Z)) else CFrame.lookAt(defenseSpot, CHECK))
+		end
+	end
+	if rootOf(offense) then
+		give(offense)
+	end
+end
+
+local function startGame(players)
+	for _, p in players do
+		p.leaderstats.Points.Value = 0
+	end
+	inGame = true
+	status.Value = `First to {Hoops.GAME_TO}`
+	checkBall(players[math.random(#players)])
+end
+
+local function onScore(scorer)
+	local stats = scorer.leaderstats
+	if stats.Points.Value >= Hoops.GAME_TO then
+		stats.Wins.Value += 1
+		status.Value = `{scorer.DisplayName} wins!`
+		inGame, nextGameAt = false, os.clock() + Hoops.NEXT_GAME_DELAY
+		return
+	end
+	local others = {}
+	for _, p in Players:GetPlayers() do
+		if p ~= scorer and rootOf(p) then
+			table.insert(others, p)
+		end
+	end
+	if #others == 0 then
+		return
+	end
+	-- Nobody grabs the ball while it drops through the net; then the other player checks it up.
+	pickupLockUntil, pickupLockPlayer = os.clock() + Hoops.CHECK_DELAY + 0.1, nil
+	task.delay(Hoops.CHECK_DELAY, function()
+		if inGame then
+			checkBall(others[math.random(#others)])
+		end
+	end)
+end
+
 -- The player's root if their reach or block (in `live`) is still going; otherwise forget it.
 local function liveRoot(live, player)
 	local r = os.clock() <= live[player] and rootOf(player)
@@ -240,11 +294,15 @@ RunService.Heartbeat:Connect(function()
 		end
 	end
 	if lastShot and prevY > RIM.Y and pos.Y <= RIM.Y and ((pos - RIM) * FLAT).Magnitude < Hoops.RIM_RADIUS then
-		local stats = lastShot.player:FindFirstChild("leaderstats")
-		if stats then
-			stats.Points.Value += lastShot.points
-		end
+		local shot = lastShot
 		lastShot = nil
+		local stats = shot.player:FindFirstChild("leaderstats") -- gone if the shooter left mid-shot
+		if stats then
+			stats.Points.Value += shot.points
+			if inGame then
+				onScore(shot.player)
+			end
+		end
 	end
 	prevY = pos.Y
 
@@ -266,6 +324,7 @@ end)
 local function addStats(player)
 	local stats = new("Folder", { Name = "leaderstats" })
 	new("IntValue", { Name = "Points", Parent = stats })
+	new("IntValue", { Name = "Wins", Parent = stats })
 	stats.Parent = player
 end
 Players.PlayerAdded:Connect(addStats)
@@ -280,3 +339,22 @@ Players.PlayerRemoving:Connect(function(player)
 	nextBlock[player] = nil
 	blocking[player] = nil
 end)
+
+-- Start a game once two players have spawned; stop if someone leaves mid-game.
+while task.wait(0.5) do
+	local players = Players:GetPlayers()
+	if #players < 2 then
+		if inGame or os.clock() >= nextGameAt then -- let a winner's name show out its time
+			inGame = false
+			status.Value = "Waiting for an opponent..."
+		end
+	elseif not inGame and os.clock() >= nextGameAt then
+		local ready = true
+		for _, p in players do
+			ready = ready and rootOf(p) ~= nil
+		end
+		if ready then
+			startGame(players)
+		end
+	end
+end

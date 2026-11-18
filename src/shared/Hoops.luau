@@ -1,6 +1,10 @@
 -- Rules and tuning shared by server and client, plus the pure math (tested in tests/hoops.spec.luau).
 -- Distances are studs, times are seconds.
 local Hoops = {
+	GAME_TO = 21, -- first to this many points wins (shots count 2 or 3)
+	CHECK_DELAY = 1, -- after a make, the ball drops through the net, then the other player checks it up
+	NEXT_GAME_DELAY = 4, -- the winner is shown this long before a new game starts
+
 	FLOOR_Y = 1, -- court top; sits on a default Baseplate (top at 0) without z-fighting
 	BALL_RADIUS = 0.6,
 	RIM_Y = 11,
