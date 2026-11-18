@@ -87,8 +87,8 @@ Publish under the same account or group that owns the game. The game doesn't pla
 
 `lune run tools/preview/pose [Name ...]` poses an R15 rig through each animation, using the game's own ball paths. It prints how far the ball gets from the hands and whether the feet stay on the floor. Then `python3 tools/preview/render.py [Name ...]` (needs matplotlib) draws front, side and top filmstrips into `tools/preview/out/`.
 
-The rig is a best guess unless `tools/preview/r15-rig.json` exists. To create it, run this in Studio's command bar with a Rig Builder R15 Block Rig named `Rig` in the workspace, then save the printed line as that file:
+The rig is a best guess unless `tools/preview/r15-rig.json` exists. To create it, run this in Studio's command bar with a Rig Builder R15 rig named `Rig` in the workspace (it reads both Motor6D joints and the newer AnimationConstraint joints), then save the printed line as that file:
 
 ```lua
-local r=workspace.Rig local j={} for _,m in r:GetDescendants() do if m:IsA("Motor6D") then table.insert(j,{name=m.Part1.Name,parent=m.Part0.Name,c0={m.C0:GetComponents()},c1={m.C1:GetComponents()}}) end end local s={} for _,p in r:GetChildren() do if p:IsA("BasePart") then s[p.Name]={p.Size.X,p.Size.Y,p.Size.Z} end end print(game:GetService("HttpService"):JSONEncode({hipHeight=r.Humanoid.HipHeight,sizes=s,joints=j}))
+local r=workspace.Rig local j={} for _,m in r:GetDescendants() do if m:IsA("Motor6D") then table.insert(j,{name=m.Part1.Name,parent=m.Part0.Name,c0={m.C0:GetComponents()},c1={m.C1:GetComponents()}}) elseif m:IsA("AnimationConstraint") and m.Attachment0 and m.Attachment1 then table.insert(j,{name=m.Attachment1.Parent.Name,parent=m.Attachment0.Parent.Name,c0={m.Attachment0.CFrame:GetComponents()},c1={m.Attachment1.CFrame:GetComponents()}}) end end local s={} for _,p in r:GetChildren() do if p:IsA("BasePart") then s[p.Name]={p.Size.X,p.Size.Y,p.Size.Z} end end print(game:GetService("HttpService"):JSONEncode({hipHeight=r.Humanoid.HipHeight,sizes=s,joints=j}))
 ```
