@@ -201,6 +201,7 @@ end
 --   drop: how far the hips sink (feet stay planted), or air = lift for a hop
 --   left/right: where each foot sits, studs ahead of the hips (- behind)
 --   leftOut/rightOut: legs out to the side in degrees (right +, left -)
+--   tuck (or leftTuck/rightTuck): knee bend in the air
 --   lean (- forward), twist (+ chest turns left), tilt (+ leans left), hipTurn: whole body yaw
 --   R/L: arm poses. The head counters the torso so the eyes stay on the defender.
 local function body(o)
@@ -210,7 +211,7 @@ local function body(o)
 	for _, side in { "Left", "Right" } do
 		local foot, out = o[side:lower()] or 0, o[side:lower() .. "Out"]
 		if o.air then
-			airLeg(p, side, foot, o.tuck or 30, out)
+			airLeg(p, side, foot, o[side:lower() .. "Tuck"] or o.tuck or 30, out)
 		else
 			plantedLeg(p, side, foot, drop, out)
 		end
@@ -368,4 +369,42 @@ both("SpinEscape", frames({
 	{ 0.34, spinFrame(240) },
 	{ 0.44, spinFrame(330) },
 	{ 0.55, READY },
+}))
+
+-- Finishes at the rim. In the air, `air` lifts the body; the game also makes the character jump.
+local HIP_GATHER_R, HIP_GATHER_L = { 35, 0, -20, 90 }, { 35, 0, 20, 90 } -- both hands on the ball at the hip
+
+both("Layup", frames({ -- right-hand layup: right-left steps, jump off the left foot, right knee drives
+	{ 0, READY },
+	{ 0.15, { drop = 0.55, right = 0.8, left = -0.5, lean = -20, R = HIP_GATHER_R, L = HIP_GATHER_L } }, -- gather step, right foot
+	{ 0.32, { drop = 0.65, left = 0.9, right = -0.4, lean = -12, R = GATHER_R, L = GATHER_L } }, -- left foot plants to jump, ball rising
+	{ 0.5, { air = 0.5, right = 2.4, left = -0.4, rightTuck = 95, tuck = 25, lean = 0, R = { 150, 0, 10, 30, 30 }, L = { 70, 0, -20, 60 } } }, -- take off, knee drive
+	{ 0.68, { air = 0.7, right = 2.6, left = -0.5, rightTuck = 100, tuck = 30, lean = 4, R = { 170, 0, 5, 5, 60 }, L = { 60, 0, -25, 50 } } }, -- full stretch, finger roll
+	{ 0.86, { air = 0.3, right = 0.5, left = 0.2, rightTuck = 40, tuck = 30, lean = -2, R = { 120, 0, 10, 30 }, L = { 40, 0, -20, 40 } } }, -- coming down
+	{ 1.0, { drop = 0.6, left = 0.4, right = -0.2, lean = -10, R = { 30, 0, 15, 30 }, L = { 30, 0, -15, 30 } } }, -- soft landing
+	{ 1.15, { drop = 0.3, left = 0.2, right = -0.1, lean = -5, R = { 10, 0, 5, 20 }, L = { 10, 0, -5, 20 } } },
+}))
+
+both("Dunk", frames({ -- right-hand dunk off two steps
+	{ 0, READY },
+	{ 0.15, { drop = 0.55, right = 0.8, left = -0.5, lean = -20, R = HIP_GATHER_R, L = HIP_GATHER_L } }, -- gather step
+	{ 0.32, { drop = 0.8, left = 0.9, right = -0.4, lean = -18, R = { -20, 0, 10, 30 }, L = { -20, 0, -10, 30 } } }, -- deep load, arms swing back
+	{ 0.5, { air = 0.6, right = 1.5, left = -0.3, rightTuck = 80, tuck = 40, lean = -5, R = { 150, 0, -10, 60 }, L = { 150, 0, 10, 60 } } }, -- explode up, ball overhead
+	{ 0.66, { air = 1.0, right = 1.8, left = -0.6, rightTuck = 100, tuck = 60, lean = 8, R = { 175, 0, 10, 110, -30 }, L = { 110, 0, -30, 20 } } }, -- cock it back, legs kick
+	{ 0.8, { air = 0.9, right = 1.2, left = 0, rightTuck = 70, tuck = 50, lean = -15, R = { 120, 0, 10, 10, 70 }, L = { 80, 0, -30, 20 } } }, -- slam through the rim
+	{ 0.92, { air = 0.4, right = 0.5, left = 0, rightTuck = 30, tuck = 30, lean = -8, R = { 140, 0, 5, 15 }, L = { 60, 0, -25, 20 } } }, -- drop
+	{ 1.05, { drop = 0.75, left = 0.5, right = -0.3, lean = -18, R = { 40, 0, 20, 40 }, L = { 40, 0, -20, 40 } } }, -- heavy landing
+	{ 1.25, { drop = 0.35, left = 0.2, right = -0.15, lean = -6, R = { 15, 0, 10, 25 }, L = { 15, 0, -10, 25 } } },
+}))
+
+build("DunkTwoHand", frames({ -- two-foot jump, both hands
+	{ 0, READY },
+	{ 0.15, { drop = 0.55, right = 0.7, left = -0.4, lean = -20, R = HIP_GATHER_R, L = HIP_GATHER_L } }, -- last step
+	{ 0.3, { drop = 0.85, left = 0.3, right = 0.3, lean = -25, R = { -30, 0, 15, 20 }, L = { -30, 0, -15, 20 } } }, -- feet together, load, arms back
+	{ 0.48, { air = 0.6, left = 0.1, right = 0.1, tuck = 20, lean = -5, R = { 150, 0, -5, 40 }, L = { 150, 0, 5, 40 } } }, -- take off
+	{ 0.64, { air = 1.0, left = -0.6, right = -0.6, tuck = 80, lean = 10, R = { 178, 0, -5, 100, -20 }, L = { 178, 0, 5, 100, -20 } } }, -- arch, ball behind the head
+	{ 0.78, { air = 0.9, left = 0.4, right = 0.4, tuck = 50, lean = -18, R = { 115, 0, -5, 10, 60 }, L = { 115, 0, 5, 10, 60 } } }, -- slam
+	{ 0.92, { air = 0.4, left = 0.2, right = 0.2, tuck = 30, lean = -8, R = { 130, 0, -8, 20 }, L = { 130, 0, 8, 20 } } },
+	{ 1.05, { drop = 0.8, left = 0.3, right = 0.2, lean = -20, R = { 45, 0, 20, 40 }, L = { 45, 0, -20, 40 } } }, -- land
+	{ 1.25, { drop = 0.35, left = 0.15, right = -0.1, lean = -6, R = { 15, 0, 10, 25 }, L = { 15, 0, -10, 25 } } },
 }))
