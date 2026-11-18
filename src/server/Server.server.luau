@@ -90,8 +90,9 @@ local function give(player)
 	ball.Anchored = true
 	ball.CanCollide = false
 	ball:SetAttribute("Hand", "Right")
-	ball:SetAttribute("FromHand", "Right")
-	ball:SetAttribute("CrossAt", workspace:GetServerTimeNow() - Hoops.CROSS_TIME) -- dribble starts at the top
+	ball:SetAttribute("Move", nil)
+	ball:SetAttribute("MoveHand", nil)
+	ball:SetAttribute("MoveAt", workspace:GetServerTimeNow()) -- the dribble starts at the top, right now
 	ball:SetAttribute("GatherAt", nil)
 	ball:SetAttribute("Holder", player.UserId)
 	lastShot = nil
@@ -99,7 +100,7 @@ local function give(player)
 end
 
 local function heldSpot(hRoot)
-	return Hoops.ballSpot(hRoot.CFrame, ball:GetAttribute("Hand"), ball:GetAttribute("FromHand"), ball:GetAttribute("CrossAt"), ball:GetAttribute("GatherAt"), workspace:GetServerTimeNow())
+	return Hoops.ballSpot(hRoot.CFrame, ball:GetAttribute("Hand"), ball:GetAttribute("Move"), ball:GetAttribute("MoveHand"), ball:GetAttribute("MoveAt"), ball:GetAttribute("GatherAt"), workspace:GetServerTimeNow())
 end
 
 -- lockOnly: lock just that player out of the pickup (passes, pokes); nil locks everyone (shots).
@@ -215,16 +216,20 @@ action.OnServerEvent:Connect(function(player, kind, value, at)
 	end
 	local h = holder()
 
-	if kind == "cross" then
-		local hand = ball:GetAttribute("Hand")
-		if h == player and (value == "Left" or value == "Right") and value ~= hand then
-			-- Use the client's start time so its crossover lines up with ours, within MAX_BACKDATE (covers ping).
-			-- Never overlap the last crossover.
+	if kind == "move" then
+		local move = Hoops.MOVES[value]
+		if h == player and move then
+			-- Use the client's start time so its move lines up with ours, within MAX_BACKDATE (covers ping),
+			-- and never start before the last move has finished.
 			local now = workspace:GetServerTimeNow()
 			local t = if typeof(at) == "number" and at == at then math.clamp(at, now - Hoops.MAX_BACKDATE, now) else now
-			ball:SetAttribute("FromHand", hand)
-			ball:SetAttribute("CrossAt", math.max(t, ball:GetAttribute("CrossAt") + Hoops.CROSS_TIME))
-			ball:SetAttribute("Hand", value)
+			local last = Hoops.MOVES[ball:GetAttribute("Move") or ""]
+			t = math.max(t, ball:GetAttribute("MoveAt") + (if last then last.duration else 0))
+			local hand = ball:GetAttribute("Hand")
+			ball:SetAttribute("MoveHand", hand)
+			ball:SetAttribute("Move", value)
+			ball:SetAttribute("MoveAt", t)
+			ball:SetAttribute("Hand", if move.switch then (if hand == "Right" then "Left" else "Right") else hand)
 		end
 	elseif kind == "shootStart" then
 		if h == player then

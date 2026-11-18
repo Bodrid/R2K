@@ -83,7 +83,7 @@ end
 
 -- While I hold the ball I predict my own state (server-clock times) so my moves start instantly;
 -- for everyone else I read the server's attributes.
-local myHand, myFromHand, myCrossAt, myGatherAt = "Right", "Right", 0, nil
+local myHand, myMove, myMoveHand, myMoveAt, myGatherAt = "Right", nil, nil, 0, nil
 local myBlockAt = 0
 local shootStart = nil -- os.clock() when I started holding shoot (for the meter)
 
@@ -94,8 +94,8 @@ end
 ball:GetAttributeChangedSignal("Holder"):Connect(function()
 	-- The server sets these before Holder, so a new possession starts in sync with it.
 	-- Clearing myGatherAt here also holds a released shot's gather until the server takes the ball.
-	myHand, myFromHand = ball:GetAttribute("Hand") or "Right", ball:GetAttribute("FromHand") or "Right"
-	myCrossAt, myGatherAt = ball:GetAttribute("CrossAt") or 0, nil
+	myHand, myMove, myMoveHand = ball:GetAttribute("Hand") or "Right", ball:GetAttribute("Move"), ball:GetAttribute("MoveHand")
+	myMoveAt, myGatherAt = ball:GetAttribute("MoveAt") or 0, nil
 end)
 
 RunService.RenderStepped:Connect(function()
@@ -128,15 +128,19 @@ RunService.RenderStepped:Connect(function()
 		local cf = root.CFrame
 
 		-- Ball: the same function the server judges steals and blocks with, on the shared server clock.
-		local pos, a, g, hand
+		local pos, ballRight, hold
 		if player == holder then
 			local mine = player == me
-			hand = (if mine then myHand else ball:GetAttribute("Hand")) or "Right"
-			local fromHand = (if mine then myFromHand else ball:GetAttribute("FromHand")) or hand
-			local crossAt = (if mine then myCrossAt else ball:GetAttribute("CrossAt")) or 0
+			local hand = (if mine then myHand else ball:GetAttribute("Hand")) or "Right"
+			local move = if mine then myMove else ball:GetAttribute("Move")
+			local moveHand = if mine then myMoveHand else ball:GetAttribute("MoveHand")
+			local moveAt = (if mine then myMoveAt else ball:GetAttribute("MoveAt")) or 0
 			local gatherAt = if mine then myGatherAt else ball:GetAttribute("GatherAt")
-			pos, a, g = Hoops.ballSpot(cf, hand, fromHand, crossAt, gatherAt, now)
+			local g
+			pos, ballRight, g = Hoops.ballSpot(cf, hand, move, moveHand, moveAt, gatherAt, now)
 			ball.CFrame = CFrame.new(pos)
+			-- Both hands take the ball once it's up at the chest (stepback gathers) or in a shot windup.
+			hold = math.max(g, math.clamp((pos.Y - cf.Position.Y) / 0.5, 0, 1))
 		end
 
 		-- Block: arms snap straight up, hold, and come down over BLOCK_TIME (the jump does the rest).
@@ -153,12 +157,12 @@ RunService.RenderStepped:Connect(function()
 				if up > 0 or not pos then
 					arm.target.WorldPosition = Hoops.blockHands(cf) + cf.RightVector * x * 0.6
 					arm.pole.WorldPosition = cf * Vector3.new(x * 3, 1.5, 0) -- elbows out to the sides
-				else -- the dribble hand rides the top of each bounce; both hold the ball on a gather
-					local dribble = if a < 1 then (if side == hand then a else 1 - a) else (if side == hand then 1 else 0)
+				else -- the hand on the ball's side rides the top of each bounce wherever the move takes it
+					local dribble = math.clamp(0.5 + x * ballRight / (2 * Hoops.DRIBBLE_SIDE), 0, 1)
 					local onTop = Vector3.new(pos.X, math.max(pos.Y + Hoops.BALL_RADIUS, handLow), pos.Z)
-					arm.target.WorldPosition = onTop:Lerp(pos + cf.RightVector * x * (Hoops.BALL_RADIUS + 0.2), g)
+					arm.target.WorldPosition = onTop:Lerp(pos + cf.RightVector * x * (Hoops.BALL_RADIUS + 0.2), hold)
 					arm.pole.WorldPosition = cf * Vector3.new(x * 3, -1, 1.5) -- elbows bend out and back
-					weight = math.max(dribble, g)
+					weight = math.max(dribble, hold)
 				end
 				if arm.ik then
 					arm.ik.Weight = weight
@@ -240,14 +244,19 @@ local function dash(direction, speed, duration)
 	end)
 end
 
--- Switch hands now (crossover-style). Returns false if a switch is still finishing.
-local function switchHands()
+-- Start a dribble move: predict it here so the ball moves instantly, tell the server, play the animation.
+-- The move's path (Hoops.MOVES) decides where the ball goes and which hand it ends in.
+local function startMove(name, animation)
 	local now = workspace:GetServerTimeNow()
-	if not iHaveBall() or now - myCrossAt < Hoops.CROSS_TIME then
+	local last = Hoops.MOVES[myMove or ""]
+	if not iHaveBall() or shootStart or (last and now < myMoveAt + last.duration) then
 		return false
 	end
-	myFromHand, myHand, myCrossAt = myHand, (if myHand == "Right" then "Left" else "Right"), now
-	action:FireServer("cross", myHand, now) -- send the start time so the server's ball matches mine
+	local switch = Hoops.MOVES[name].switch
+	myMove, myMoveHand, myMoveAt = name, myHand, now
+	myHand = if switch then (if myHand == "Right" then "Left" else "Right") else myHand
+	action:FireServer("move", name, now) -- send the start time so the server's ball matches mine
+	play(animation)
 	return true
 end
 
@@ -293,10 +302,7 @@ end, true, Enum.KeyCode.E, Enum.KeyCode.ButtonX)
 
 ContextActionService:BindAction("Crossover", function(_, state)
 	if state == Enum.UserInputState.Begin then
-		local name = sided("Crossover")
-		if switchHands() then
-			play(name)
-		end
+		startMove("Crossover", sided("Crossover"))
 	end
 end, true, Enum.KeyCode.Q, Enum.KeyCode.ButtonL1)
 
@@ -320,10 +326,8 @@ ContextActionService:BindAction("Block", function(_, state)
 	end
 end, true, Enum.KeyCode.F, Enum.KeyCode.ButtonY)
 
--- Dribble moves (keyboard and gamepad). switches: seconds into the move when the ball changes hands.
+-- Dribble moves (keyboard and gamepad). The ball's path for each is in Hoops.MOVES.
 -- dash: burst of movement { delay, direction, speed, time }. Hold Shift / L2 for the escape version.
--- shortcut: the ball still takes the front crossover path on tweens and behind-the-backs; give each move
--- its own ball path once the animations are final
 local escapeHeld = false
 ContextActionService:BindAction("Escape", function(_, state)
 	escapeHeld = state == Enum.UserInputState.Begin
@@ -331,31 +335,26 @@ ContextActionService:BindAction("Escape", function(_, state)
 end, false, Enum.KeyCode.LeftShift, Enum.KeyCode.ButtonL2)
 
 local MOVES = {
-	{ name = "BetweenLegs", keys = { Enum.KeyCode.Z, Enum.KeyCode.DPadLeft }, switches = { 0.2 } },
-	{ name = "BehindBack", keys = { Enum.KeyCode.X, Enum.KeyCode.DPadRight }, switches = { 0.22 } },
+	{ name = "BetweenLegs", keys = { Enum.KeyCode.Z, Enum.KeyCode.DPadLeft } },
+	{ name = "BehindBack", keys = { Enum.KeyCode.X, Enum.KeyCode.DPadRight } },
 	{ name = "InAndOut", keys = { Enum.KeyCode.C, Enum.KeyCode.DPadUp } },
 	{ name = "Hesitation", keys = { Enum.KeyCode.V, Enum.KeyCode.DPadDown } },
-	{ name = "DoubleTween", keys = { Enum.KeyCode.T }, switches = { 0.2, 0.55 } },
+	{ name = "DoubleTween", keys = { Enum.KeyCode.T } },
 	{ name = "Stepback", escape = "StepbackEscape", keys = { Enum.KeyCode.G, Enum.KeyCode.ButtonR1 }, dash = { 0.12, "back", 18, 0.3 }, escapeDash = { 0.1, "back", 20, 0.55 } },
 	{ name = "SideStep", escape = "SideStepEscape", keys = { Enum.KeyCode.H, Enum.KeyCode.ButtonR2 }, dash = { 0.12, "side", 18, 0.3 }, escapeDash = { 0.1, "side", 24, 0.35 } },
-	{ name = "SpinMove", escape = "SpinEscape", unsided = true, keys = { Enum.KeyCode.B, Enum.KeyCode.ButtonR3 }, dash = { 0.05, "forward", 16, 0.45 }, escapeDash = { 0.05, "forward", 20, 0.45 } },
+	{ name = "SpinMove", escape = "SpinEscape", keys = { Enum.KeyCode.B, Enum.KeyCode.ButtonR3 }, dash = { 0.05, "forward", 16, 0.45 }, escapeDash = { 0.05, "forward", 20, 0.45 } },
 }
-local busyUntil = 0
 for _, move in MOVES do
 	ContextActionService:BindAction(move.name, function(_, state)
-		if state ~= Enum.UserInputState.Begin or not iHaveBall() or shootStart or os.clock() < busyUntil then
+		if state ~= Enum.UserInputState.Begin then
 			return
 		end
-		local escape = escapeHeld and move.escape
+		-- SpinMove has no left-hand animation, so from the left hand a spin is always the spin escape.
+		local escape = (escapeHeld or (move.name == "SpinMove" and myHand == "Left")) and move.escape
 		local name = escape or move.name
 		local hand = myHand
-		local track = play(if move.unsided and not escape then name else sided(name))
-		if not track then
+		if not startMove(name, if name == "SpinMove" then name else sided(name)) then
 			return
-		end
-		busyUntil = os.clock() + (if track.Length > 0 then track.Length else 0.5)
-		for _, at in move.switches or {} do
-			task.delay(at, switchHands)
 		end
 		local d = if escape then move.escapeDash else move.dash
 		if d then

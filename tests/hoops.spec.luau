@@ -26,23 +26,46 @@ local CFrame, Vector3 = roblox.CFrame, roblox.Vector3
 local Y = Hoops.FLOOR_Y + 3
 local handler = CFrame.lookAt(Vector3.new(0, Y, 0), Vector3.new(0, Y, -1))
 local T = 1000 -- any server time
-local function spot(hand, fromHand, crossAt, gatherAt, now)
-	return (Hoops.ballSpot(handler, hand, fromHand, crossAt, gatherAt, now))
+local function spot(hand, move, moveHand, moveAt, gatherAt, now)
+	return (Hoops.ballSpot(handler, hand, move, moveHand, moveAt, gatherAt, now))
 end
 local function near(a, b)
 	return (a - b).Magnitude < 1e-3
 end
 local floorY = Hoops.FLOOR_Y + Hoops.BALL_RADIUS
-local right = spot("Right", "Right", T - Hoops.CROSS_TIME, nil, T) -- top of the bounce, right side
-local left = spot("Left", "Left", T - Hoops.CROSS_TIME, nil, T)
-local low = spot("Right", "Right", T - Hoops.CROSS_TIME, nil, T + 0.5 / Hoops.DRIBBLE_HZ) -- half a bounce later
-local midCross = spot("Left", "Right", T, nil, T + Hoops.CROSS_TIME / 2)
+local right = spot("Right", nil, nil, T, nil, T) -- a new dribble: top of the bounce, right side
+local left = spot("Left", nil, nil, T, nil, T)
+local low = spot("Right", nil, nil, T, nil, T + 0.5 / Hoops.DRIBBLE_HZ) -- half a bounce later
 assert(right.X > 0 and left.X < 0, "hand picks the side")
 assert(math.abs(right.Y - (Y + Hoops.DRIBBLE_TOP)) < 1e-3, "a new dribble starts at the top")
 assert(math.abs(low.Y - floorY) < 1e-3, "half a bounce later the ball is on the floor")
-assert(math.abs(midCross.X) < 1e-3 and math.abs(midCross.Y - floorY) < 1e-3, "mid-crossover it bounces between the feet")
-assert(near(spot("Left", "Right", T, nil, T + Hoops.CROSS_TIME), left), "a finished crossover lands at the top, other side")
-assert(near(spot("Right", "Right", T - 5, T, T + Hoops.GATHER_TIME), Hoops.gatherSpot(handler)), "a gathered ball sits at the gather spot")
+assert(near(spot("Right", nil, nil, T - 5, T, T + Hoops.GATHER_TIME), Hoops.gatherSpot(handler)), "a gathered ball sits at the gather spot")
+
+-- Dribble moves: every path joins the dribble cleanly at both ends and lasts as long as its animation.
+local fs = require("@lune/fs")
+for name, move in Hoops.MOVES do
+	local endHand = if move.switch then "Left" else "Right"
+	for i = 2, #move.path do
+		assert(move.path[i][1] > move.path[i - 1][1], `{name}: path times go forward`)
+	end
+	assert(near(spot(endHand, name, "Right", T, nil, T), right), `{name}: starts at the top of the dribble`)
+	local before, after = spot(endHand, name, "Right", T, nil, T + move.duration - 1e-6), spot(endHand, name, "Right", T, nil, T + move.duration)
+	assert(near(before, after) and near(after, if move.switch then left else right), `{name}: hands back to the dribble on the right side`)
+	local mirrored = spot(if move.switch then "Right" else "Left", name, "Left", T, nil, T + move.duration / 2)
+	local original = spot(endHand, name, "Right", T, nil, T + move.duration / 2)
+	assert(near(mirrored, Vector3.new(-original.X, original.Y, original.Z)), `{name}: the left-hand version is a mirror`)
+	local animation = roblox.deserializeModel(fs.readFile(`assets/animations/{name}.rbxmx`))[1]
+	local length = 0
+	for _, keyframe in animation:GetChildren() do
+		length = math.max(length, keyframe.Time)
+	end
+	assert(math.abs(length - move.duration) < 0.01, `{name}: ball path lasts {move.duration}s but the animation lasts {length}s`)
+end
+local crossBounce = spot("Left", "Crossover", "Right", T, nil, T + 0.25)
+assert(math.abs(crossBounce.X) < 1e-3 and math.abs(crossBounce.Y - floorY) < 1e-3, "a crossover bounces in front, between the feet")
+assert(spot("Left", "BehindBack", "Right", T, nil, T + 0.26).Z > 0, "a behind-the-back goes behind the body")
+local spinHalf = spot("Right", "SpinMove", "Right", T, nil, T + 0.3)
+assert(spinHalf.Z > 0 and math.abs(spinHalf.X) < 1, "halfway through a spin the ball has swung round behind")
 
 -- Steal contact: the defender's hands must actually touch the ball where it is right now.
 local function defenderAt(x, z)
