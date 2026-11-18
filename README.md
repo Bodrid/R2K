@@ -32,6 +32,17 @@ With more than 2 players in a server, it plays as cutthroat: everyone for themse
 | Crossover | Q | LB |
 | Pass (goes where you face) | R | B |
 | Block (jump, arms up) | F | Y |
+| Between the legs | Z | D-pad left |
+| Behind the back | X | D-pad right |
+| In-and-out | C | D-pad up |
+| Hesitation | V | D-pad down |
+| Double tween | T | |
+| Stepback | G | RB |
+| Side-step (toward your ball hand) | H | RT |
+| Spin | B | Right stick click |
+| Escape version of stepback, side-step and spin | Hold Shift | Hold LT |
+
+Shoot near the rim to finish with a layup, or a dunk when very close. Further out, it's a jump shot. Dribble moves are keyboard and gamepad only for now.
 
 On mobile, these controls appear as on-screen buttons.
 

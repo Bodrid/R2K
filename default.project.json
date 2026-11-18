@@ -3,17 +3,28 @@
   "tree": {
     "$className": "DataModel",
     "ReplicatedStorage": {
-      "Hoops": { "$path": "src/shared/Hoops.luau" }
+      "Hoops": {
+        "$path": "src/shared/Hoops.luau"
+      }
     },
     "ServerStorage": {
-      "PlaceholderAnimations": { "$path": "assets/animations" }
+      "PlaceholderAnimations": {
+        "$path": "assets/animations"
+      }
     },
     "ServerScriptService": {
-      "Server": { "$path": "src/server/Server.server.luau" }
+      "Server": {
+        "$path": "src/server/Server.server.luau"
+      }
     },
     "StarterPlayer": {
       "StarterPlayerScripts": {
-        "Client": { "$path": "src/client/Client.client.luau" }
+        "Client": {
+          "$path": "src/client/Client.client.luau"
+        }
+      },
+      "$properties": {
+        "EnableMouseLockOption": false
       }
     }
   }

@@ -34,6 +34,9 @@ local Hoops = {
 	GREEN = 0.85, -- timing quality at or above this always goes in
 	HOLD_TOLERANCE = 0.15, -- max gap between client and server hold time before the server's wins
 
+	LAYUP_RANGE = 12, -- shooting this close to the rim is a layup (with a jump) instead of a jump shot
+	DUNK_RANGE = 5, -- and this close, a dunk
+
 	CONTEST_RANGE = 6,
 	STEAL_RANGE = 6, -- steal only does anything this close to the handler
 	STEAL_REACH = 2, -- how close the defender's hands must get; small enough that the body shields the far side
