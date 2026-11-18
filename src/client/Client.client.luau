@@ -33,7 +33,31 @@ local banner = new("TextLabel", { Size = UDim2.fromOffset(320, 36), Position = U
 status.Changed:Connect(function(text)
 	banner.Text = text
 end)
+-- Score popup: big text in the middle of the screen whenever anyone scores.
+local popup = new("TextLabel", { Size = UDim2.fromOffset(400, 70), Position = UDim2.new(0.5, -200, 0.25, 0), BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(255, 200, 40), TextStrokeTransparency = 0, TextScaled = true, Font = Enum.Font.GothamBlack, Visible = false, Parent = gui })
+local popupId = 0
+ReplicatedStorage:WaitForChild("Scored").OnClientEvent:Connect(function(scorer, points)
+	popup.Text = if scorer == me then `+{points}  BUCKET!` else `{scorer.DisplayName} +{points}`
+	popup.Visible = true
+	popupId += 1
+	local id = popupId
+	task.delay(1.5, function()
+		if popupId == id then -- a newer score keeps its own popup up
+			popup.Visible = false
+		end
+	end)
+end)
 gui.Parent = me:WaitForChild("PlayerGui")
+
+-- Fixed 2K-style camera: one spot behind the arc looking at the hoop. Re-applied every frame because
+-- Roblox's camera scripts reset it on respawn. Movement keys stay relative to it (W = toward the hoop).
+local camera = workspace.CurrentCamera
+local CAMERA = CFrame.lookAt(Vector3.new(0, Hoops.FLOOR_Y + Hoops.CAMERA_HEIGHT, Hoops.RIM_Z + Hoops.CAMERA_BACK), Vector3.new(0, Hoops.FLOOR_Y + 2, Hoops.RIM_Z + 10))
+RunService:BindToRenderStep("FixedCamera", Enum.RenderPriority.Camera.Value + 1, function()
+	camera.CameraType = Enum.CameraType.Scriptable
+	camera.FieldOfView = Hoops.CAMERA_FOV
+	camera.CFrame = CAMERA
+end)
 
 -- Arms: Roblox's IK solver pulls each hand to a target (a local world-space attachment).
 -- One rig per character that needs one, made on first use.

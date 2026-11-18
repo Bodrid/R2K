@@ -8,6 +8,12 @@ local Hoops = {
 	FLOOR_Y = 1, -- court top; sits on a default Baseplate (top at 0) without z-fighting
 	BALL_RADIUS = 0.6,
 	RIM_Y = 11,
+	RIM_Z = -20, -- the hoop is at x = 0; players shoot toward -Z
+
+	-- Fixed broadcast camera, behind the arc looking at the hoop (movement stays relative to it)
+	CAMERA_HEIGHT = 22,
+	CAMERA_BACK = 52, -- distance behind the rim
+	CAMERA_FOV = 55,
 	RIM_RADIUS = 1.5,
 	THREE_DIST = 20, -- horizontal distance from the rim
 

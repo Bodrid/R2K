@@ -46,7 +46,7 @@ On mobile, these controls appear as on-screen buttons.
 - Blocks: everyone sees the blocker jump with arms up. Pressing block near the ball handler, or near a shooter while the shot is up, makes the ball live for contact until the animation ends. If the raised hands touch the ball, whether it's held up for a shot or already in the air, it's swatted away and the shot can't score. Anywhere else, block is just the animation.
 - Shot odds come from timing and distance, like in 2K.
 
-All tuning values live in `src/shared/Hoops.luau`.
+All tuning values live in `src/shared/Hoops.luau`, including the fixed camera (`CAMERA_HEIGHT`, `CAMERA_BACK`, `CAMERA_FOV`).
 
 ## Tests
 

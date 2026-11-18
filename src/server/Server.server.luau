@@ -6,7 +6,7 @@ local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Hoops = require(ReplicatedStorage.Hoops)
 
-local RIM = Vector3.new(0, Hoops.RIM_Y, -20)
+local RIM = Vector3.new(0, Hoops.RIM_Y, Hoops.RIM_Z)
 local CENTER = Vector3.new(0, Hoops.FLOOR_Y + 3, 0)
 local FLAT = Vector3.new(1, 0, 1)
 
@@ -29,6 +29,25 @@ for i = 1, 12 do -- rim as a ring of solid segments so misses bounce off the iro
 	new("Part", { Name = "Rim", Anchored = true, Size = Vector3.new(0.2, 0.2, 0.85), CFrame = CFrame.new(RIM + Vector3.new(math.cos(a), 0, math.sin(a)) * Hoops.RIM_RADIUS) * CFrame.Angles(0, -a, 0), Color = orange, Parent = workspace })
 end
 
+-- Three-point line: an arc exactly THREE_DIST from the rim, the same distance the scoring uses.
+-- It runs from baseline to baseline (the court ends 10 studs behind the rim).
+local arcCenter = Vector3.new(RIM.X, Hoops.FLOOR_Y + 0.03, RIM.Z)
+for i = 0, 59 do
+	local a = math.rad(-30 + (i + 0.5) * 4) -- -30° to 210°: the part of the circle that's on the court
+	new("Part", { Name = "ThreeLine", Anchored = true, CanCollide = false, CanQuery = false, Size = Vector3.new(0.35, 0.05, 1.45), CFrame = CFrame.new(arcCenter + Vector3.new(math.cos(a), 0, math.sin(a)) * Hoops.THREE_DIST) * CFrame.Angles(0, -a, 0), Color = Color3.new(1, 1, 1), Material = Enum.Material.SmoothPlastic, Parent = workspace })
+end
+
+-- Net: criss-crossed strands from the rim down to a narrower ring. Not solid, so made shots fall through.
+local NET_DROP, NET_BOTTOM = 2, Hoops.RIM_RADIUS * 0.6
+for i = 1, 12 do
+	local top = RIM + Vector3.new(math.cos(i / 12 * math.pi * 2), 0, math.sin(i / 12 * math.pi * 2)) * Hoops.RIM_RADIUS
+	for _, step in { -0.5, 0.5 } do
+		local b = (i + step) / 12 * math.pi * 2
+		local bottom = RIM + Vector3.new(math.cos(b) * NET_BOTTOM, -NET_DROP, math.sin(b) * NET_BOTTOM)
+		new("Part", { Name = "Net", Anchored = true, CanCollide = false, CanQuery = false, CastShadow = false, Size = Vector3.new(0.06, 0.06, (bottom - top).Magnitude), CFrame = CFrame.lookAt((top + bottom) / 2, bottom), Color = Color3.new(1, 1, 1), Parent = workspace })
+	end
+end
+
 -- Persistent so instance streaming never removes the ball on any client.
 local ballModel = new("Model", { Name = "Basketball", ModelStreamingMode = Enum.ModelStreamingMode.Persistent })
 local ball = new("Part", {
@@ -43,6 +62,7 @@ local ball = new("Part", {
 ballModel.Parent = workspace
 
 local action = new("RemoteEvent", { Name = "Action", Parent = ReplicatedStorage })
+local scored = new("RemoteEvent", { Name = "Scored", Parent = ReplicatedStorage }) -- tells everyone to show the score popup
 
 local shootStarts = {} -- [player] = os.clock() when they started holding shoot
 local nextSteal = {} -- [player] = os.clock() when they may try again
@@ -299,6 +319,7 @@ RunService.Heartbeat:Connect(function()
 		local stats = shot.player:FindFirstChild("leaderstats") -- gone if the shooter left mid-shot
 		if stats then
 			stats.Points.Value += shot.points
+			scored:FireAllClients(shot.player, shot.points)
 			if inGame then
 				onScore(shot.player)
 			end
