@@ -46,6 +46,7 @@ local action = new("RemoteEvent", { Name = "Action", Parent = ReplicatedStorage 
 
 local shootStarts = {} -- [player] = os.clock() when they started holding shoot
 local nextSteal = {} -- [player] = os.clock() when they may try again
+local reaching = {} -- [player] = os.clock() until their reach stays live
 local lastShot = nil -- { player, points } until the ball is caught
 local pickupLockUntil, pickupLockPlayer = 0, nil
 local prevY = ball.Position.Y
@@ -61,18 +62,28 @@ local function holder()
 	return id and Players:GetPlayerByUserId(id)
 end
 
+-- Held-ball state lives in attributes with server-clock times, so everyone computes the same ball (Hoops.ballSpot).
+-- Set before Holder, so a client sees a new possession already in sync.
 local function give(player)
 	ball.Anchored = true
 	ball.CanCollide = false
-	ball:SetAttribute("Hand", "Right") -- set before Holder; clients reset to Right on a new holder too
-	ball:SetAttribute("Shooting", nil)
+	ball:SetAttribute("Hand", "Right")
+	ball:SetAttribute("FromHand", "Right")
+	ball:SetAttribute("CrossAt", workspace:GetServerTimeNow() - Hoops.CROSS_TIME) -- dribble starts at the top
+	ball:SetAttribute("GatherAt", nil)
 	ball:SetAttribute("Holder", player.UserId)
 	lastShot = nil
+	table.clear(reaching)
+end
+
+local function heldSpot(hRoot)
+	return Hoops.ballSpot(hRoot.CFrame, ball:GetAttribute("Hand"), ball:GetAttribute("FromHand"), ball:GetAttribute("CrossAt"), ball:GetAttribute("GatherAt"), workspace:GetServerTimeNow())
 end
 
 -- lockOnly: lock just that player out of the pickup (passes, pokes); nil locks everyone (shots).
 local function release(position, velocity, lockOnly)
-	ball:SetAttribute("Shooting", nil)
+	table.clear(reaching)
+	ball:SetAttribute("GatherAt", nil)
 	ball:SetAttribute("Holder", nil)
 	ball.Anchored = false
 	ball.CanCollide = true
@@ -105,7 +116,7 @@ local function shoot(player, root, holdTime)
 	release(from, Hoops.launchVelocity(from, target, t, Vector3.new(0, -workspace.Gravity, 0)))
 end
 
-action.OnServerEvent:Connect(function(player, kind, value)
+action.OnServerEvent:Connect(function(player, kind, value, at)
 	local root = rootOf(player)
 	if not root then
 		return
@@ -113,13 +124,20 @@ action.OnServerEvent:Connect(function(player, kind, value)
 	local h = holder()
 
 	if kind == "cross" then
-		if h == player and (value == "Left" or value == "Right") then
+		local hand = ball:GetAttribute("Hand")
+		if h == player and (value == "Left" or value == "Right") and value ~= hand then
+			-- Use the client's start time so its crossover lines up with ours, within MAX_BACKDATE (covers ping).
+			-- Never overlap the last crossover.
+			local now = workspace:GetServerTimeNow()
+			local t = if typeof(at) == "number" and at == at then math.clamp(at, now - Hoops.MAX_BACKDATE, now) else now
+			ball:SetAttribute("FromHand", hand)
+			ball:SetAttribute("CrossAt", math.max(t, ball:GetAttribute("CrossAt") + Hoops.CROSS_TIME))
 			ball:SetAttribute("Hand", value)
 		end
 	elseif kind == "shootStart" then
 		if h == player then
 			shootStarts[player] = os.clock()
-			ball:SetAttribute("Shooting", true) -- so everyone else sees the gather
+			ball:SetAttribute("GatherAt", workspace:GetServerTimeNow()) -- so everyone else sees the gather
 		end
 	elseif kind == "shoot" then
 		local started = shootStarts[player]
@@ -143,17 +161,11 @@ action.OnServerEvent:Connect(function(player, kind, value)
 			release(from, Hoops.launchVelocity(from, to, Hoops.PASS_TIME, Vector3.new(0, -workspace.Gravity, 0)), player)
 		end
 	elseif kind == "steal" then
+		-- A reach only counts near the handler. It stays live for REACH_TIME, checked every frame below.
 		local hRoot = h and h ~= player and rootOf(h)
-		if hRoot and os.clock() >= (nextSteal[player] or 0) then
+		if hRoot and (hRoot.Position - root.Position).Magnitude <= Hoops.STEAL_RANGE and os.clock() >= (nextSteal[player] or 0) then
 			nextSteal[player] = os.clock() + Hoops.STEAL_COOLDOWN
-			-- The ball only becomes real here: the server works out where it is from the side it's on,
-			-- so a crossover away from the defender protects it. A windup above the head is out of reach.
-			local spot = if ball:GetAttribute("Shooting") then Hoops.gatherSpot(hRoot.CFrame) else Hoops.dribbleSpot(hRoot.CFrame, ball:GetAttribute("Hand"))
-			if Hoops.reaches(root.CFrame, spot) and math.random() < Hoops.STEAL_CHANCE then
-				-- Knock it loose as a physics ball, away from the handler; whoever gets there first keeps it.
-				local away = ((spot - hRoot.Position) * FLAT).Unit
-				release(spot, away * Hoops.POKE_SPEED + Vector3.new(0, 10, 0), h)
-			end
+			reaching[player] = os.clock() + Hoops.REACH_TIME
 		end
 	end
 end)
@@ -161,8 +173,24 @@ end)
 RunService.Heartbeat:Connect(function()
 	if ball:GetAttribute("Holder") then
 		local h = holder()
-		if not (h and rootOf(h)) then
+		local hRoot = h and rootOf(h)
+		if not hRoot then
 			release(CENTER, Vector3.zero) -- holder left or died
+			return
+		end
+		-- Live reaches: the server knows exactly where the ball is (side, bounce height, crossover, gather),
+		-- so only real contact counts. It knocks the ball loose as a physics ball; whoever gets there first keeps it.
+		for p, liveUntil in reaching do
+			local r = rootOf(p)
+			if os.clock() > liveUntil or not r then
+				reaching[p] = nil
+			else
+				local spot = heldSpot(hRoot)
+				if Hoops.reaches(r.CFrame, spot) then
+					release(spot, ((spot - hRoot.Position) * FLAT).Unit * Hoops.POKE_SPEED + Vector3.new(0, 10, 0), h)
+					return
+				end
+			end
 		end
 		return
 	end
@@ -205,4 +233,5 @@ end
 Players.PlayerRemoving:Connect(function(player)
 	shootStarts[player] = nil
 	nextSteal[player] = nil
+	reaching[player] = nil
 end)

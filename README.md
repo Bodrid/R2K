@@ -28,7 +28,8 @@ On mobile, these controls appear as on-screen buttons.
 - Every client also bends the ball handler's arms toward the ball, using Roblox's built-in IKControl. The dribble hand rides each bounce, and both hands hold the ball on a shot. No animation data crosses the network.
 - Your own crossovers and shot windups show up instantly, and the server is told afterward.
 - The ball only becomes a real physics ball, run by the server, when it's loose: shots, rebounds, passes and pokes. Nobody can fake a basket, and anyone near a pass can pick it off.
-- Steals: pressing steal near the ball handler makes the server work out where the ball is from which side it's on. If your reach touches it, it's knocked loose, and whoever gets there first keeps it. Crossing over away from the defender protects the ball.
+- The dribble runs on Roblox's synced server clock, so the server and every player work out the exact same ball position: side, bounce height, crossover and shot windup.
+- Steals: pressing steal near the ball handler opens a reach that lasts a split second. The server checks real contact between your hands and the ball every frame, with no dice roll. Contact knocks the ball loose, and whoever gets there first keeps it. A ball low in its bounce slips under the reach, and crossing over away from the defender protects it.
 - Shot odds come from timing and distance, like in 2K.
 
 All tuning values live in `src/shared/Hoops.luau`.

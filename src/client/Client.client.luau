@@ -1,7 +1,7 @@
 -- Client: input, the shot meter, and animating the ball handler every frame.
--- Every client draws the ball and bends the holder's arms itself, from the server's "Holder", "Hand"
--- and "Shooting" attributes, so nothing animated waits on the network. Your own crossovers and
--- shot gathers start instantly; the server hears about them after.
+-- Every client draws the ball and bends the holder's arms itself, from the server's attributes and the
+-- shared server clock, so nothing animated waits on the network and everyone (server included) agrees
+-- where the ball is. Your own crossovers and shot gathers start instantly; the server hears after.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ContextActionService = game:GetService("ContextActionService")
@@ -55,23 +55,26 @@ local function attachArms(char)
 	end
 end
 
-local myHand = "Right" -- my predicted hand while I hold the ball
-local myGather = false -- I started a shot; hold the gather until the server takes the ball
-local shootStart = nil
-local lastHolder, lastHand, fromHand, crossAt, gatherAt = nil, "Right", "Right", 0, nil
+-- While I hold the ball I predict my own state (server-clock times) so my moves start instantly;
+-- for everyone else I read the server's attributes.
+local myHand, myFromHand, myCrossAt, myGatherAt = "Right", "Right", 0, nil
+local shootStart = nil -- os.clock() when I started holding shoot (for the meter)
+local lastHolder = nil
 
 local function iHaveBall()
 	return ball:GetAttribute("Holder") == me.UserId
 end
 
 ball:GetAttributeChangedSignal("Holder"):Connect(function()
-	myHand, myGather = "Right", false -- the server starts every possession in the right hand
+	-- The server sets these before Holder, so a new possession starts in sync with it.
+	-- Clearing myGatherAt here also holds a released shot's gather until the server takes the ball.
+	myHand, myFromHand = ball:GetAttribute("Hand") or "Right", ball:GetAttribute("FromHand") or "Right"
+	myCrossAt, myGatherAt = ball:GetAttribute("CrossAt") or 0, nil
 end)
 
 RunService.RenderStepped:Connect(function()
-	local now = os.clock()
 	if shootStart then
-		fill.Size = UDim2.fromScale(1, math.min((now - shootStart) / METER_MAX, 1))
+		fill.Size = UDim2.fromScale(1, math.min((os.clock() - shootStart) / METER_MAX, 1))
 	end
 
 	local id = ball:GetAttribute("Holder")
@@ -85,32 +88,19 @@ RunService.RenderStepped:Connect(function()
 		lastHolder = nil
 		return
 	end
-	if holder ~= lastHolder then -- new possession: start dribbling from the right hand
-		lastHolder, lastHand, crossAt, gatherAt = holder, "Right", now - Hoops.CROSS_TIME, nil
+	if holder ~= lastHolder then
+		lastHolder = holder
 		attachArms(char)
 	end
-	local hand = holder == me and myHand or ball:GetAttribute("Hand") or "Right"
-	if hand ~= lastHand then -- crossover: mine starts instantly, others' when the server says so
-		fromHand, lastHand, crossAt = lastHand, hand, now
-	end
-	local gathering = if holder == me then myGather else ball:GetAttribute("Shooting") == true
-	if gathering ~= (gatherAt ~= nil) then
-		gatherAt = if gathering then now else nil
-	end
 
-	-- Ball: bounce beside the body, cross between sides, rise into the shot.
+	-- Ball: the same function the server judges steals with, on the shared server clock.
+	local mine = holder == me
+	local hand = (if mine then myHand else ball:GetAttribute("Hand")) or "Right"
+	local fromHand = (if mine then myFromHand else ball:GetAttribute("FromHand")) or hand
+	local crossAt = (if mine then myCrossAt else ball:GetAttribute("CrossAt")) or 0
+	local gatherAt = if mine then myGatherAt else ball:GetAttribute("GatherAt")
 	local cf = root.CFrame
-	local a = (now - crossAt) / Hoops.CROSS_TIME
-	local pos, s -- s: 0 = top of the bounce, 1 = on the floor
-	if a < 1 then -- crossover: one low bounce to the other side
-		pos, s = Hoops.dribbleSpot(cf, fromHand):Lerp(Hoops.dribbleSpot(cf, hand), a), math.sin(math.pi * a)
-	else -- |cos| snaps the ball off the floor and lets it float near the hand
-		pos, s = Hoops.dribbleSpot(cf, hand), 1 - math.abs(math.cos(math.pi * Hoops.DRIBBLE_HZ * (now - crossAt - Hoops.CROSS_TIME)))
-	end
-	pos = pos:Lerp(Vector3.new(pos.X, Hoops.FLOOR_Y + Hoops.BALL_RADIUS, pos.Z), s)
-	local g = if gatherAt then math.min((now - gatherAt) / Hoops.GATHER_TIME, 1) else 0
-	g = g * g * (3 - 2 * g) -- ease in and out
-	pos = pos:Lerp(Hoops.gatherSpot(cf), g)
+	local pos, a, g = Hoops.ballSpot(cf, hand, fromHand, crossAt, gatherAt, workspace:GetServerTimeNow())
 	ball.CFrame = CFrame.new(pos)
 
 	-- Hands: the dribble hand rides the top of each bounce; both hold the ball on a gather.
@@ -130,7 +120,7 @@ end)
 ContextActionService:BindAction("ShootOrSteal", function(_, state)
 	if state == Enum.UserInputState.Begin then
 		if iHaveBall() then
-			shootStart, myGather = os.clock(), true
+			shootStart, myGatherAt = os.clock(), workspace:GetServerTimeNow()
 			fill.Size = UDim2.fromScale(1, 0)
 			meter.Visible = true
 			action:FireServer("shootStart")
@@ -145,9 +135,10 @@ ContextActionService:BindAction("ShootOrSteal", function(_, state)
 end, true, Enum.KeyCode.E, Enum.KeyCode.ButtonX)
 
 ContextActionService:BindAction("Crossover", function(_, state)
-	if state == Enum.UserInputState.Begin and iHaveBall() and os.clock() - crossAt >= Hoops.CROSS_TIME then
-		myHand = myHand == "Right" and "Left" or "Right"
-		action:FireServer("cross", myHand)
+	local now = workspace:GetServerTimeNow()
+	if state == Enum.UserInputState.Begin and iHaveBall() and now - myCrossAt >= Hoops.CROSS_TIME then
+		myFromHand, myHand, myCrossAt = myHand, (if myHand == "Right" then "Left" else "Right"), now
+		action:FireServer("cross", myHand, now) -- send the start time so the server's ball matches mine
 	end
 end, true, Enum.KeyCode.Q, Enum.KeyCode.ButtonL1)
 

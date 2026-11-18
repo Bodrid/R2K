@@ -25,9 +25,11 @@ local Hoops = {
 	HOLD_TOLERANCE = 0.15, -- max gap between client and server hold time before the server's wins
 
 	CONTEST_RANGE = 6,
+	STEAL_RANGE = 6, -- steal only does anything this close to the handler
 	STEAL_REACH = 2, -- how close the defender's hands must get; small enough that the body shields the far side
-	STEAL_CHANCE = 0.5, -- chance a reach that touches the ball knocks it loose
+	REACH_TIME = 0.15, -- how long a reach stays live; short, so bounce timing matters
 	STEAL_COOLDOWN = 1,
+	MAX_BACKDATE = 0.25, -- how far back the server accepts a crossover start time (covers ping)
 	POKE_SPEED = 14, -- how hard a steal knocks the ball loose
 	PASS_DIST = 25, -- passes go this far in the direction you face
 	PASS_TIME = 0.35, -- flight time; short, so passes stay flat under Roblox gravity
@@ -59,9 +61,28 @@ local function offset(cf, right, up, forward)
 	return cf.Position + cf.RightVector * right + cf.UpVector * up + cf.LookVector * forward
 end
 
--- Top of the bounce beside the holder. The server uses it to judge steals, clients to draw the ball.
-function Hoops.dribbleSpot(rootCFrame, hand)
-	return offset(rootCFrame, (hand == "Left" and -1 or 1) * Hoops.DRIBBLE_SIDE, Hoops.DRIBBLE_TOP, Hoops.DRIBBLE_FORWARD)
+local function lerp(a, b, t)
+	return a + (b - a) * t
+end
+
+local function sideOf(hand)
+	return hand == "Left" and -1 or 1
+end
+
+-- Where a held ball is at server time `now`. Times come from the shared server clock, so the server
+-- and every client get the same answer: clients draw it, the server judges steals with it.
+-- Also returns crossover progress `a` (1 = done) and gather progress `g` (0..1, eased) for the arms.
+function Hoops.ballSpot(rootCFrame, hand, fromHand, crossAt, gatherAt, now)
+	local a = math.clamp((now - crossAt) / Hoops.CROSS_TIME, 0, 1)
+	-- s: 0 = top of the bounce, 1 = on the floor. A crossover is one low bounce; a dribble uses |cos|
+	-- so the ball snaps off the floor and floats near the hand.
+	local s = if a < 1 then math.sin(math.pi * a) else 1 - math.abs(math.cos(math.pi * Hoops.DRIBBLE_HZ * (now - crossAt - Hoops.CROSS_TIME)))
+	local g = if gatherAt then math.clamp((now - gatherAt) / Hoops.GATHER_TIME, 0, 1) else 0
+	g = g * g * (3 - 2 * g) -- ease in and out
+	local floorUp = Hoops.FLOOR_Y + Hoops.BALL_RADIUS - rootCFrame.Position.Y -- root stays upright, so its up is world up
+	local right = lerp(sideOf(fromHand), sideOf(hand), a) * Hoops.DRIBBLE_SIDE
+	local up = lerp(Hoops.DRIBBLE_TOP, floorUp, s)
+	return offset(rootCFrame, lerp(right, 0, g), lerp(up, Hoops.GATHER_HEIGHT, g), lerp(Hoops.DRIBBLE_FORWARD, Hoops.GATHER_FORWARD, g)), a, g
 end
 
 -- Where the ball sits during a shot windup; shots launch from here.
