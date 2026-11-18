@@ -5,6 +5,9 @@
     "ReplicatedStorage": {
       "Hoops": { "$path": "src/shared/Hoops.luau" }
     },
+    "ServerStorage": {
+      "PlaceholderAnimations": { "$path": "assets/animations" }
+    },
     "ServerScriptService": {
       "Server": { "$path": "src/server/Server.server.luau" }
     },
