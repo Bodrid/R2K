@@ -1,0 +1,17 @@
+{
+  "name": "R2K",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "Hoops": { "$path": "src/shared/Hoops.luau" }
+    },
+    "ServerScriptService": {
+      "Server": { "$path": "src/server/Server.server.luau" }
+    },
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "Client": { "$path": "src/client/Client.client.luau" }
+      }
+    }
+  }
+}
