@@ -18,6 +18,7 @@ To play 1v1 locally, open the Test tab in Studio, set Clients and Servers to 2 p
 | Shoot: hold, then release on the green line | E | X |
 | Steal (when defending) | E | X |
 | Crossover | Q | LB |
+| Pass (goes where you face) | R | B |
 
 On mobile, these controls appear as on-screen buttons.
 
@@ -26,8 +27,9 @@ On mobile, these controls appear as on-screen buttons.
 - The server stores only who has the ball. Every client draws the ball in that player's hand on its own, so the ball never waits on the network.
 - Every client also bends the ball handler's arms toward the ball, using Roblox's built-in IKControl. The dribble hand rides each bounce, and both hands hold the ball on a shot. No animation data crosses the network.
 - Your own crossovers and shot windups show up instantly, and the server is told afterward.
-- When the ball is loose (shots and rebounds), the server runs its physics, so nobody can fake a basket.
-- Shots and steals are dice rolls based on timing and distance, like in 2K. That hides lag better than exact hitboxes.
+- The ball only becomes a real physics ball, run by the server, when it's loose: shots, rebounds, passes and pokes. Nobody can fake a basket, and anyone near a pass can pick it off.
+- Steals: pressing steal near the ball handler makes the server work out where the ball is from which side it's on. If your reach touches it, it's knocked loose, and whoever gets there first keeps it. Crossing over away from the defender protects the ball.
+- Shot odds come from timing and distance, like in 2K.
 
 All tuning values live in `src/shared/Hoops.luau`.
 

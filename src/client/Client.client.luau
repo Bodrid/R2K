@@ -100,20 +100,17 @@ RunService.RenderStepped:Connect(function()
 
 	-- Ball: bounce beside the body, cross between sides, rise into the shot.
 	local cf = root.CFrame
-	local function bounceTop(side)
-		return cf * Vector3.new(SIDE[side] * Hoops.DRIBBLE_SIDE, Hoops.DRIBBLE_TOP, -Hoops.DRIBBLE_FORWARD)
-	end
 	local a = (now - crossAt) / Hoops.CROSS_TIME
 	local pos, s -- s: 0 = top of the bounce, 1 = on the floor
 	if a < 1 then -- crossover: one low bounce to the other side
-		pos, s = bounceTop(fromHand):Lerp(bounceTop(hand), a), math.sin(math.pi * a)
+		pos, s = Hoops.dribbleSpot(cf, fromHand):Lerp(Hoops.dribbleSpot(cf, hand), a), math.sin(math.pi * a)
 	else -- |cos| snaps the ball off the floor and lets it float near the hand
-		pos, s = bounceTop(hand), 1 - math.abs(math.cos(math.pi * Hoops.DRIBBLE_HZ * (now - crossAt - Hoops.CROSS_TIME)))
+		pos, s = Hoops.dribbleSpot(cf, hand), 1 - math.abs(math.cos(math.pi * Hoops.DRIBBLE_HZ * (now - crossAt - Hoops.CROSS_TIME)))
 	end
 	pos = pos:Lerp(Vector3.new(pos.X, Hoops.FLOOR_Y + Hoops.BALL_RADIUS, pos.Z), s)
 	local g = if gatherAt then math.min((now - gatherAt) / Hoops.GATHER_TIME, 1) else 0
 	g = g * g * (3 - 2 * g) -- ease in and out
-	pos = pos:Lerp(cf * Vector3.new(0, Hoops.GATHER_HEIGHT, -Hoops.GATHER_FORWARD), g)
+	pos = pos:Lerp(Hoops.gatherSpot(cf), g)
 	ball.CFrame = CFrame.new(pos)
 
 	-- Hands: the dribble hand rides the top of each bounce; both hold the ball on a gather.
@@ -154,5 +151,12 @@ ContextActionService:BindAction("Crossover", function(_, state)
 	end
 end, true, Enum.KeyCode.Q, Enum.KeyCode.ButtonL1)
 
+ContextActionService:BindAction("Pass", function(_, state)
+	if state == Enum.UserInputState.Begin and iHaveBall() then
+		action:FireServer("pass")
+	end
+end, true, Enum.KeyCode.R, Enum.KeyCode.ButtonB)
+
 ContextActionService:SetTitle("ShootOrSteal", "Shoot")
 ContextActionService:SetTitle("Crossover", "Cross")
+ContextActionService:SetTitle("Pass", "Pass")

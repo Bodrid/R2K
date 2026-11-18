@@ -47,7 +47,7 @@ local action = new("RemoteEvent", { Name = "Action", Parent = ReplicatedStorage 
 local shootStarts = {} -- [player] = os.clock() when they started holding shoot
 local nextSteal = {} -- [player] = os.clock() when they may try again
 local lastShot = nil -- { player, points } until the ball is caught
-local pickupLockUntil = 0
+local pickupLockUntil, pickupLockPlayer = 0, nil
 local prevY = ball.Position.Y
 
 local function rootOf(player)
@@ -70,7 +70,8 @@ local function give(player)
 	lastShot = nil
 end
 
-local function release(position, velocity)
+-- lockOnly: lock just that player out of the pickup (passes, pokes); nil locks everyone (shots).
+local function release(position, velocity, lockOnly)
 	ball:SetAttribute("Shooting", nil)
 	ball:SetAttribute("Holder", nil)
 	ball.Anchored = false
@@ -78,7 +79,7 @@ local function release(position, velocity)
 	ball.CFrame = CFrame.new(position)
 	ball.AssemblyLinearVelocity = velocity
 	ball:SetNetworkOwner(nil) -- server simulates loose balls, so a client can't fake a make
-	pickupLockUntil = os.clock() + Hoops.PICKUP_LOCK
+	pickupLockUntil, pickupLockPlayer = os.clock() + Hoops.PICKUP_LOCK, lockOnly
 	prevY = position.Y
 end
 
@@ -99,8 +100,7 @@ local function shoot(player, root, holdTime)
 	end
 
 	lastShot = { player = player, points = dist >= Hoops.THREE_DIST and 3 or 2 }
-	-- Launch from the gather spot clients draw (above the head, so the ball clears the shooter).
-	local from = (root.CFrame * CFrame.new(0, Hoops.GATHER_HEIGHT, -Hoops.GATHER_FORWARD)).Position
+	local from = Hoops.gatherSpot(root.CFrame) -- same spot clients draw the windup, so the ball doesn't jump
 	local t = Hoops.flightTime(dist)
 	release(from, Hoops.launchVelocity(from, target, t, Vector3.new(0, -workspace.Gravity, 0)))
 end
@@ -134,13 +134,25 @@ action.OnServerEvent:Connect(function(player, kind, value)
 			value = serverHold
 		end
 		shoot(player, root, value)
+	elseif kind == "pass" then
+		if h == player then
+			-- A pass is a real physics ball, so anyone near its path can pick it off.
+			-- shortcut: passes go where you face; aim at a teammate once teams exist
+			local from = root.CFrame * Vector3.new(0, 0.5, -1.5)
+			local to = root.CFrame * Vector3.new(0, 0.5, -Hoops.PASS_DIST)
+			release(from, Hoops.launchVelocity(from, to, Hoops.PASS_TIME, Vector3.new(0, -workspace.Gravity, 0)), player)
+		end
 	elseif kind == "steal" then
-		if h and h ~= player and os.clock() >= (nextSteal[player] or 0) then
+		local hRoot = h and h ~= player and rootOf(h)
+		if hRoot and os.clock() >= (nextSteal[player] or 0) then
 			nextSteal[player] = os.clock() + Hoops.STEAL_COOLDOWN
-			local hRoot = rootOf(h)
-			-- Dice roll within range, like 2K: hides lag better than exact hand hitboxes.
-			if hRoot and (hRoot.Position - root.Position).Magnitude <= Hoops.STEAL_RANGE and math.random() < Hoops.STEAL_CHANCE then
-				give(player)
+			-- The ball only becomes real here: the server works out where it is from the side it's on,
+			-- so a crossover away from the defender protects it. A windup above the head is out of reach.
+			local spot = if ball:GetAttribute("Shooting") then Hoops.gatherSpot(hRoot.CFrame) else Hoops.dribbleSpot(hRoot.CFrame, ball:GetAttribute("Hand"))
+			if Hoops.reaches(root.CFrame, spot) and math.random() < Hoops.STEAL_CHANCE then
+				-- Knock it loose as a physics ball, away from the handler; whoever gets there first keeps it.
+				local away = ((spot - hRoot.Position) * FLAT).Unit
+				release(spot, away * Hoops.POKE_SPEED + Vector3.new(0, 10, 0), h)
 			end
 		end
 	end
@@ -167,10 +179,12 @@ RunService.Heartbeat:Connect(function()
 
 	if pos.Y < Hoops.FLOOR_Y - 20 then
 		release(CENTER, Vector3.zero) -- fell off the map
-	elseif os.clock() >= pickupLockUntil then
+	else
+		local locked = os.clock() < pickupLockUntil
 		for _, p in Players:GetPlayers() do
 			local r = rootOf(p)
-			if r and (r.Position - pos).Magnitude <= Hoops.PICKUP_RANGE then
+			local lockedOut = locked and (pickupLockPlayer == nil or pickupLockPlayer == p)
+			if r and not lockedOut and (r.Position - pos).Magnitude <= Hoops.PICKUP_RANGE then
 				give(p)
 				break
 			end

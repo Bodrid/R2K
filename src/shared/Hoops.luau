@@ -25,11 +25,14 @@ local Hoops = {
 	HOLD_TOLERANCE = 0.15, -- max gap between client and server hold time before the server's wins
 
 	CONTEST_RANGE = 6,
-	STEAL_RANGE = 5,
-	STEAL_CHANCE = 0.35,
+	STEAL_REACH = 2, -- how close the defender's hands must get; small enough that the body shields the far side
+	STEAL_CHANCE = 0.5, -- chance a reach that touches the ball knocks it loose
 	STEAL_COOLDOWN = 1,
+	POKE_SPEED = 14, -- how hard a steal knocks the ball loose
+	PASS_DIST = 25, -- passes go this far in the direction you face
+	PASS_TIME = 0.35, -- flight time; short, so passes stay flat under Roblox gravity
 	PICKUP_RANGE = 4,
-	PICKUP_LOCK = 0.5, -- after a shot nobody can grab the ball, so the shooter doesn't catch their own release
+	PICKUP_LOCK = 0.5, -- after a shot nobody can grab the ball; after a pass or poke, only the old holder can't
 }
 
 -- 1 at a perfect release, falling to 0 at SHOT_WINDOW early or late.
@@ -49,6 +52,26 @@ end
 -- Roblox gravity is strong (196 studs/s²), so real-looking arcs need short flights.
 function Hoops.flightTime(distance)
 	return 0.45 + distance * 0.012
+end
+
+-- A point relative to a character, from its CFrame's own axes (no Roblox globals, so tests can run it).
+local function offset(cf, right, up, forward)
+	return cf.Position + cf.RightVector * right + cf.UpVector * up + cf.LookVector * forward
+end
+
+-- Top of the bounce beside the holder. The server uses it to judge steals, clients to draw the ball.
+function Hoops.dribbleSpot(rootCFrame, hand)
+	return offset(rootCFrame, (hand == "Left" and -1 or 1) * Hoops.DRIBBLE_SIDE, Hoops.DRIBBLE_TOP, Hoops.DRIBBLE_FORWARD)
+end
+
+-- Where the ball sits during a shot windup; shots launch from here.
+function Hoops.gatherSpot(rootCFrame)
+	return offset(rootCFrame, 0, Hoops.GATHER_HEIGHT, Hoops.GATHER_FORWARD)
+end
+
+-- Can the defender's hands (just in front of them) touch a ball at `spot`?
+function Hoops.reaches(defenderCFrame, spot)
+	return (spot - offset(defenderCFrame, 0, 0, 1.5)).Magnitude <= Hoops.STEAL_REACH
 end
 
 -- Velocity that lands on `to` after `t` seconds: to = from + v*t + gravity*t²/2.
