@@ -20,14 +20,14 @@ local Hoops = {
 	DRIBBLE_HZ = 2, -- bounces per second
 
 	-- Ball path, relative to the holder's HumanoidRootPart
-	DRIBBLE_SIDE = 1.255, -- how far out to the side the ball bounces
-	DRIBBLE_FORWARD = 0.797,
-	DRIBBLE_TOP = -1.422, -- top of the bounce (ball center), below the root
-	HAND_LOW = -0.973, -- the dribble hand follows the ball down to here, then waits
-	RIG_HIP_HEIGHT = 1.807, -- the calibrated body's hip height; the server warns if players' bodies don't match
-	SHOULDER_UP = 0.524, -- a one-hand ball above shoulder height sits on the palm (layups, dunks); below it the hand is on top
-	GATHER_HEIGHT = 1.131, -- where the ball sits during the shot windup; the shot launches from here
-	GATHER_FORWARD = 1.22, -- in front of the face, in reach of R15 arms
+	DRIBBLE_SIDE = 1.839, -- how far out to the side the ball bounces
+	DRIBBLE_FORWARD = 0.952,
+	DRIBBLE_TOP = -1.409, -- top of the bounce (ball center), below the root
+	HAND_LOW = -0.937, -- the dribble hand follows the ball down to here, then waits
+	RIG_HIP_HEIGHT = 2, -- the calibrated body's hip height; the server warns if players' bodies don't match
+	SHOULDER_UP = 0.763, -- a one-hand ball above shoulder height sits on the palm (layups, dunks); below it the hand is on top
+	GATHER_HEIGHT = 1.737, -- where the ball sits during the shot windup; the shot launches from here
+	GATHER_FORWARD = 1.249, -- in front of the face, in reach of R15 arms
 	GATHER_TIME = 0.2, -- seconds to bring the ball up into the shot
 
 	PERFECT_HOLD = 0.6, -- hold shoot this long for a perfect release
@@ -41,16 +41,16 @@ local Hoops = {
 	CONTEST_RANGE = 6,
 	STEAL_RANGE = 6, -- steal only does anything this close to the handler
 	STEAL_REACH = 2, -- how close the defender's hands must get; small enough that the body shields the far side
-	STEAL_UP = 0.018, -- where the reaching hand is at full stretch, from the defender's root
-	STEAL_FORWARD = 1.877,
+	STEAL_UP = -1.186, -- where the reaching hand is at full stretch, from the defender's root
+	STEAL_FORWARD = 1.625,
 	REACH_TIME = 0.15, -- how long a reach stays live; short, so bounce timing matters
 	STEAL_COOLDOWN = 1,
 	MAX_BACKDATE = 0.25, -- how far back the server accepts a dribble move's start time (covers ping)
 	POKE_SPEED = 14, -- how hard a steal knocks the ball loose
 	BLOCK_RANGE = 8, -- block only does anything this close to the ball handler (or a shooter, ball in the air)
 	BLOCK_REACH = 1.5, -- how close the raised hands must get to the ball; small, so you have to be in their face
-	BLOCK_HEIGHT = 1.791, -- raised hands, above the root (the jump adds to it)
-	BLOCK_FORWARD = 0.69,
+	BLOCK_HEIGHT = 2.22, -- raised hands, above the root (the jump adds to it)
+	BLOCK_FORWARD = 0.801,
 	BLOCK_TIME = 0.5, -- block animation length, about one jump; the ball is live for contact this long
 	BLOCK_COOLDOWN = 1.2,
 	SWAT_SPEED = 25, -- how hard a block knocks the ball away
@@ -105,126 +105,126 @@ local S, T, F = Hoops.DRIBBLE_SIDE, Hoops.DRIBBLE_TOP, Hoops.DRIBBLE_FORWARD
 Hoops.MOVES = {
 	BehindBack = { switch = true, path = {
 		{ 0, S, T, F, "R" },
-		{ 0.12, 1.194, -1.428, -0.363, "R" },
-		{ 0.26, 0.29, -1.248, -0.698, "R" },
-		{ 0.38, -0.349, "floor", -0.079 },
+		{ 0.12, 1.752, -1.406, -0.575, "R" },
+		{ 0.26, 0.681, -1.232, -0.83, "R" },
+		{ 0.38, -0.361, "floor", -0.092 },
 		{ 0.55, -S, T, F, "L" },
 	} },
 	BetweenLegs = { switch = true, path = {
 		{ 0, S, T, F, "R" },
-		{ 0.12, 0.696, -1.957, 0.372, "R" },
-		{ 0.26, 0, "floor", 0.364, "legs" },
-		{ 0.4, -1.328, -1.503, 0.669, "L" },
+		{ 0.12, 1.176, -2.076, 0.454, "R" },
+		{ 0.26, 0, "floor", 0.171, "legs" },
+		{ 0.4, -1.921, -1.493, 0.77, "L" },
 		{ 0.55, -S, T, F, "L" },
 	} },
 	Crossover = { switch = true, path = {
 		{ 0, S, T, F, "R" },
-		{ 0.12, 1.032, -1.435, 0.954, "R" },
-		{ 0.25, -0.175, "floor", 0.751 },
-		{ 0.38, -1.382, -1.539, 0.549, "L" },
+		{ 0.12, 1.573, -1.514, 1.092, "R" },
+		{ 0.25, -0.206, "floor", 0.845 },
+		{ 0.38, -1.985, -1.55, 0.599, "L" },
 		{ 0.5, -S, T, F, "L" },
 	} },
 	DoubleTween = { switch = false, path = {
 		{ 0, S, T, F, "R" },
-		{ 0.12, 0.696, -1.957, 0.372, "R" },
-		{ 0.26, 0, "floor", 0.364, "legs" },
-		{ 0.4, -1.328, -1.503, 0.669, "L" },
-		{ 0.52, -0.696, -1.97, 0.36, "L" },
-		{ 0.64, 0, "floor", 0.364, "legs" },
-		{ 0.76, 1.259, -1.662, 0.57, "R" },
+		{ 0.12, 1.176, -2.076, 0.454, "R" },
+		{ 0.26, 0, "floor", 0.171, "legs" },
+		{ 0.4, -1.921, -1.493, 0.77, "L" },
+		{ 0.52, -1.176, -2.091, 0.441, "L" },
+		{ 0.64, 0, "floor", 0.171, "legs" },
+		{ 0.76, 1.846, -1.702, 0.699, "R" },
 		{ 0.85, S, T, F, "R" },
 	} },
 	Dunk = { switch = false, finish = true, jumpAt = 0.4, path = {
 		{ 0, S, T, F, "R" },
-		{ 0.15, 0, -0.182, 1.226, "both" },
-		{ 0.32, 0, -1.192, -0.044, "both" },
-		{ 0.5, 0, 2.036, 0.055, "both" },
-		{ 0.66, 1.02, 1.961, -0.896, "R" },
-		{ 0.8, 1.129, 2.23, 1.045, "R" },
+		{ 0.15, 0, -0.317, 1.542, "both" },
+		{ 0.32, 0, -1.25, -0.083, "both" },
+		{ 0.5, 0, 2.65, 0.202, "both" },
+		{ 0.66, 1.578, 2.43, -1.046, "R" },
+		{ 0.8, 1.753, 2.578, 1.628, "R" },
 	} },
 	DunkTwoHand = { switch = false, finish = true, jumpAt = 0.38, path = {
 		{ 0, S, T, F, "R" },
-		{ 0.15, 0, -0.182, 1.226, "both" },
-		{ 0.3, 0, -1.021, -0.339, "both" },
-		{ 0.48, 0, 2.137, 0.324, "both" },
-		{ 0.64, 0, 1.455, -0.996, "both" },
-		{ 0.78, 0, 1.525, 1.34, "both" },
+		{ 0.15, 0, -0.317, 1.542, "both" },
+		{ 0.3, 0, -1.022, -0.379, "both" },
+		{ 0.48, 0, 2.704, 0.481, "both" },
+		{ 0.64, 0, 2.002, -1.191, "both" },
+		{ 0.78, 0, 1.789, 1.936, "both" },
 	} },
 	Hesitation = { switch = false, path = {
 		{ 0, S, T, F, "R" },
-		{ 0.15, 1.144, -0.364, 0.908, "R" },
-		{ 0.32, 1.152, -0.47, 0.942, "R" },
-		{ 0.45, 1.2, "floor", 0.875 },
+		{ 0.15, 1.75, -0.314, 1.117, "R" },
+		{ 0.32, 1.757, -0.438, 1.144, "R" },
+		{ 0.45, 1.795, "floor", 1.055 },
 		{ 0.6, S, T, F, "R" },
 	} },
 	InAndOut = { switch = false, path = {
 		{ 0, S, T, F, "R" },
-		{ 0.14, -0.001, -1.241, 1.148, "R" },
-		{ 0.28, 1.628, -1.284, 0.434, "R" },
-		{ 0.38, 1.459, "floor", 0.599 },
+		{ 0.14, 0.278, -1.378, 1.469, "R" },
+		{ 0.28, 2.276, -1.324, 0.373, "R" },
+		{ 0.38, 2.077, "floor", 0.636 },
 		{ 0.5, S, T, F, "R" },
 	} },
 	Layup = { switch = false, finish = true, jumpAt = 0.4, path = {
 		{ 0, S, T, F, "R" },
-		{ 0.15, 0, -0.182, 1.226, "both" },
-		{ 0.32, 0, 0.174, 1.025, "both" },
-		{ 0.5, 1.144, 2.532, 0.04, "R" },
-		{ 0.68, 1.06, 2.622, -0.29, "R" },
+		{ 0.15, 0, -0.317, 1.542, "both" },
+		{ 0.32, 0, 0.138, 1.401, "both" },
+		{ 0.5, 1.744, 3.132, 0.247, "R" },
+		{ 0.68, 1.632, 3.369, -0.118, "R" },
 	} },
 	SideStep = { switch = false, path = {
 		{ 0, S, T, F, "R" },
-		{ 0.1, 1.202, "floor", 0.892 },
-		{ 0.26, 1.118, -0.094, 1.043, "R" },
-		{ 0.42, 0.093, 0.302, 0.898, "both" },
-		{ 0.52, 0.039, 0.377, 0.873, "both" },
+		{ 0.1, 1.769, "floor", 1.099 },
+		{ 0.26, 1.659, -0.09, 1.335, "R" },
+		{ 0.42, 0.103, 0.31, 1.267, "both" },
+		{ 0.52, 0.043, 0.403, 1.239, "both" },
 		{ 0.6, S, T, F, "R" },
 	} },
 	SideStepEscape = { switch = false, path = {
 		{ 0, S, T, F, "R" },
-		{ 0.077, 1.202, "floor", 0.892 },
-		{ 0.2, 1.118, 1.143, 1.043, "R" },
-		{ 0.323, 0.093, 0.228, 0.898, "both" },
-		{ 0.4, 0.039, 0.346, 0.873, "both" },
+		{ 0.077, 1.769, "floor", 1.1 },
+		{ 0.2, 1.659, -0.046, 1.335, "R" },
+		{ 0.323, 0.103, 0.223, 1.267, "both" },
+		{ 0.4, 0.043, 0.366, 1.239, "both" },
 		{ 0.462, S, T, F, "R" },
 	} },
 	SpinEscape = { switch = false, path = {
 		{ 0, S, T, F, "R" },
-		{ 0.1, 1.381, -0.45, -0.26, "R" },
-		{ 0.157, 0.859, -0.45, -1.112, "R" },
-		{ 0.213, -0.239, -0.45, -1.384, "R" },
-		{ 0.27, -0.985, -0.45, -1.001, "R" },
-		{ 0.327, -1.392, -0.45, 0.189, "R" },
-		{ 0.383, -0.971, -0.45, 1.016, "R" },
-		{ 0.44, 0.26, -0.45, 1.381, "R" },
+		{ 0.1, 1.925, -0.508, -0.497, "R" },
+		{ 0.157, 1.108, -0.508, -1.65, "R" },
+		{ 0.213, -0.467, -0.508, -1.932, "R" },
+		{ 0.27, -1.485, -0.508, -1.321, "R" },
+		{ 0.327, -1.947, -0.508, 0.398, "R" },
+		{ 0.383, -1.275, -0.508, 1.525, "R" },
+		{ 0.44, 0.497, -0.508, 1.925, "R" },
 		{ 0.55, S, T, F, "R" },
 	} },
 	SpinMove = { switch = false, path = {
 		{ 0, S, T, F, "R" },
-		{ 0.15, 0.84, -0.106, -0.968, "R" },
-		{ 0.2, 0.388, -0.106, -1.222, "R" },
-		{ 0.25, -0.556, -0.106, -1.155, "R" },
-		{ 0.3, -0.968, -0.106, -0.84, "R" },
-		{ 0.35, -1.222, -0.106, -0.388, "R" },
-		{ 0.4, -1.155, -0.106, 0.556, "R" },
-		{ 0.45, -0.84, -0.106, 0.968, "R" },
+		{ 0.15, 1.146, -0.045, -1.5, "R" },
+		{ 0.2, 0.458, -0.045, -1.831, "R" },
+		{ 0.25, -0.923, -0.045, -1.646, "R" },
+		{ 0.3, -1.5, -0.045, -1.146, "R" },
+		{ 0.35, -1.831, -0.045, -0.458, "R" },
+		{ 0.4, -1.646, -0.045, 0.923, "R" },
+		{ 0.45, -1.146, -0.045, 1.5, "R" },
 		{ 0.6, S, T, F, "R" },
 	} },
 	Stepback = { switch = false, path = {
 		{ 0, S, T, F, "R" },
-		{ 0.1, 1.142, "floor", 0.966 },
-		{ 0.22, 1.007, -0.402, 1.169, "R" },
-		{ 0.42, 0, 0.243, 0.899, "both" },
-		{ 0.6, 0, 0.383, 0.855, "both" },
+		{ 0.1, 1.71, "floor", 1.171 },
+		{ 0.22, 1.556, -0.386, 1.433, "R" },
+		{ 0.42, 0, 0.241, 1.267, "both" },
+		{ 0.6, 0, 0.413, 1.219, "both" },
 		{ 0.7, S, T, F, "R" },
 	} },
 	StepbackEscape = { switch = false, path = {
 		{ 0, S, T, F, "R" },
-		{ 0.09, 1.138, "floor", 0.897 },
-		{ 0.22, 0.968, 1.329, 1.041, "R" },
-		{ 0.34, 0.968, "floor", 1.041 },
-		{ 0.46, 0.968, 1.328, 1.041, "R" },
-		{ 0.58, 0, 0.179, 0.899, "both" },
-		{ 0.7, 0, 0.372, 0.855, "both" },
+		{ 0.09, 1.7, "floor", 1.111 },
+		{ 0.22, 1.5, 1.423, 1.34, "R" },
+		{ 0.34, 1.5, "floor", 1.339 },
+		{ 0.46, 1.501, 1.422, 1.339, "R" },
+		{ 0.58, 0, 0.166, 1.267, "both" },
+		{ 0.7, 0, 0.399, 1.219, "both" },
 		{ 0.8, S, T, F, "R" },
 	} },
 }

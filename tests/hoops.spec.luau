@@ -23,7 +23,7 @@ assert((v + gravity * t).y < 0, "ball is falling at the rim")
 -- Held ball path. The handler stands at x=0, z=0 facing -Z, root at normal height above the floor.
 local roblox = require("@lune/roblox")
 local CFrame, Vector3 = roblox.CFrame, roblox.Vector3
-local Y = Hoops.FLOOR_Y + 2.707 -- standing root height of the measured rig (tools/preview/r15-rig.json)
+local Y = Hoops.FLOOR_Y + Hoops.RIG_HIP_HEIGHT + 1 -- standing root height of the calibrated rig (hip height + half the root)
 local handler = CFrame.lookAt(Vector3.new(0, Y, 0), Vector3.new(0, Y, -1))
 local T = 1000 -- any server time
 local function spot(hand, move, moveHand, moveAt, gatherAt, now)
@@ -73,13 +73,21 @@ end
 local crossBounce = spot("Left", "Crossover", "Right", T, nil, T + 0.25)
 assert(math.abs(crossBounce.X) < 0.35 and crossBounce.Z < 0 and math.abs(crossBounce.Y - floorY) < 1e-3, "a crossover bounces in front, between the feet (hips are 0.35 either side)")
 assert(spot("Left", "BehindBack", "Right", T, nil, T + 0.26).Z > 0, "a behind-the-back goes behind the body")
-local function headTop(spotAt) -- how far above the top of the head (body space, measured rig) a ball is
-	return spotAt.Y - Y - 1.99
+-- Top of the head above the root, standing, from the calibrated rig (root -> lower torso -> upper torso -> head).
+local rig = require("@lune/serde").decode("json", fs.readFile("tools/preview/r15-rig.json"))
+local HEAD_TOP = rig.sizes.Head[2] / 2
+for _, j in rig.joints do
+	if j.name == "LowerTorso" or j.name == "UpperTorso" or j.name == "Head" then
+		HEAD_TOP += j.c0[2] - j.c1[2]
+	end
+end
+local function headTop(spotAt) -- how far above the top of the head a ball is
+	return spotAt.Y - Y - HEAD_TOP
 end
 assert(headTop(spot("Right", "Dunk", "Right", T, T, T + 0.5)) > 0, "a dunk takes the ball up over the head")
 assert(headTop(spot("Right", "Layup", "Right", T, T, T + Hoops.MOVES.Layup.duration)) > -0.5, "a layup releases up high at full stretch")
 local spinHalf = spot("Right", "SpinMove", "Right", T, nil, T + 0.3)
-assert(spinHalf.Z > 0 and math.abs(spinHalf.X) < 1, "halfway through a spin the ball has swung round behind")
+assert(spinHalf.Z > 0 and spinHalf.X < 0, "halfway through a spin the ball has swung round behind, to the far side")
 
 -- Steal contact: the defender's hands must actually touch the ball where it is right now.
 local function defenderAt(x, z)

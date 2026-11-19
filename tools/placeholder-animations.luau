@@ -53,8 +53,8 @@ local LEG_SCALE = HIP_TO_ANKLE / 2.4
 -- below standing (both already scaled). Two-bone IK with the knee bending forward.
 local function plantedLeg(p, side, foot, drop, out)
 	local f, h = foot, HIP_TO_ANKLE - drop
-	local reach = math.clamp(math.sqrt(f * f + h * h), math.abs(THIGH - SHIN) + 1e-4, THIGH + SHIN - 1e-4)
-	local thigh = math.atan2(f, h) + math.acos((THIGH * THIGH + reach * reach - SHIN * SHIN) / (2 * THIGH * reach))
+	local reach = math.clamp(math.sqrt(f * f + h * h), math.abs(THIGH - SHIN) + 1e-4, THIGH + SHIN) -- full reach = straight leg
+	local thigh = math.atan2(f, h) + math.acos(math.clamp((THIGH * THIGH + reach * reach - SHIN * SHIN) / (2 * THIGH * reach), -1, 1))
 	local shin = math.atan2(f - THIGH * math.sin(thigh), h - THIGH * math.cos(thigh))
 	local hipTurn, kneeTurn = thigh - THIGH_REST, (shin - SHIN_REST) - (thigh - THIGH_REST)
 	if math.sqrt(f * f + h * h) < THIGH + SHIN - 1e-3 then -- self-check: the ankle lands where it was placed
@@ -170,10 +170,10 @@ build("Block", {
 
 build("StealSwipe", { -- arms and torso only, so the legs keep their walk/run
 	{ 0, {} },
-	{ 0.12, { -- lean in and reach with the right hand
-		UpperTorso = rot(-20, 15),
-		RightUpperArm = rot(85),
-		RightLowerArm = rot(15),
+	{ 0.12, { -- lean in and swipe down at the ball (it's dribbled at hip height)
+		UpperTorso = rot(-35, 15),
+		RightUpperArm = rot(50),
+		RightLowerArm = rot(10),
 		LeftUpperArm = rot(-25),
 	} },
 	{ 0.35, {} },
