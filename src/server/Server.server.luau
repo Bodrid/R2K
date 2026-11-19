@@ -536,7 +536,12 @@ local function botPlay(bot, name, id, fade, keep)
 	return track
 end
 
+local botRetryAt = 0
 local function makeBot()
+	if os.clock() < botRetryAt then
+		return
+	end
+	botRetryAt = os.clock() + 10 -- if Roblox can't build it, try again later instead of every half second
 	local look = new("HumanoidDescription", {}) -- Roblox's default body, the one everything is calibrated to
 	local skin, jersey, shorts = Color3.fromRGB(160, 110, 80), Color3.fromRGB(200, 40, 50), Color3.fromRGB(30, 30, 36)
 	look.HeadColor, look.LeftArmColor, look.RightArmColor = skin, skin, skin
@@ -610,6 +615,9 @@ local function botNextMove(bot, root)
 end
 
 local function botShoot(bot, root, finish, hold)
+	if holder() ~= bot then
+		return
+	end
 	table.clear(bot.queue)
 	bot.shooting = true
 	local hand = ball:GetAttribute("Hand")
