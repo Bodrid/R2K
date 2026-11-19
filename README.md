@@ -1,6 +1,6 @@
 # R2K
 
-A 1v1 basketball prototype for Roblox, inspired by 2K. It has dribbling with no input delay, a timed shot meter, steals, crossovers and a scoreboard.
+A 1v1 basketball game for Roblox, inspired by 2K. It has lag-free dribbling with chainable pro-stick moves, timed jump shots, layups and dunks, contact-based steals and blocks, intense D, the take-it-back rule, games to 21, and a practice bot to play when you're alone.
 
 ## Run it
 
@@ -9,7 +9,7 @@ You need [Rojo](https://rojo.space) 7.4 or newer.
 - `rojo build -o R2K.rbxlx`, then open `R2K.rbxlx` in Studio, or
 - `rojo serve`, then connect from the Rojo plugin in Studio.
 
-To play 1v1 locally, open the Test tab in Studio, set Clients and Servers to 2 players, and press Start.
+Press Play to play the practice bot. To play 1v1 against another player locally, choose Server & Clients with 2 clients in Studio's test mode dropdown, and press Play.
 
 ## The court
 
@@ -21,6 +21,8 @@ To play 1v1 locally, open the Test tab in Studio, set Clients and Servers to 2 p
   - A criss-crossed net that swishes when a shot drops.
 - **Court:** full markings with lane hash marks, a team-color border band, an "R2K" wordmark, padded arena walls, bleachers, corner light towers with spotlights, a light haze, and a scoreboard above the hoop showing the live score.
 - **Player indicator:** a ring under your player, orange with the ball and blue on defense.
+- **Ball shadow:** a soft shadow under the ball shows the dribble's height and where loose balls are.
+- **Callouts and camera:** BLOCKED! and STOLEN! flash for everyone, and the camera punches in on dunks.
 
 ## Practice bot
 
@@ -106,7 +108,9 @@ All tuning values live in `src/shared/Hoops.luau`, including the fixed camera (`
 
 ## Tests
 
-`lune run tests/hoops.spec` checks the shot math. Gameplay itself is tested in Studio.
+- `lune run tests/hoops.spec` checks the shot math, steal and block geometry, every move's ball path, chaining, and the pro stick.
+- `lune run tests/bot.spec` checks the practice bot's decisions, and plays hundreds of simulated possessions on offense and defense at every level.
+- What these can't cover (feel, camera, real network play) is tested in Studio.
 
 ## Placeholder animations
 
