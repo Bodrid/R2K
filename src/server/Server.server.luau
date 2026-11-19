@@ -5,6 +5,7 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Hoops = require(ReplicatedStorage.Hoops)
+local ServerStorage = game:GetService("ServerStorage")
 
 local RIM = Vector3.new(0, Hoops.RIM_Y, Hoops.RIM_Z)
 local CENTER = Vector3.new(0, Hoops.FLOOR_Y + 3, 0)
@@ -16,6 +17,25 @@ local function new(className, props)
 		inst[k] = v
 	end
 	return inst
+end
+
+-- In Studio, everyone plays the animations saved in the place (see Hoops.animationId): the generated placeholders,
+-- with anything you've saved from the Animation Editor (RBX_ANIMSAVES) on top, matched by name.
+if Hoops.STUDIO_ANIMATIONS and RunService:IsStudio() then
+	local copy = new("Folder", { Name = "StudioAnimations" })
+	for _, sourceName in { "PlaceholderAnimations", "RBX_ANIMSAVES" } do
+		local source = ServerStorage:FindFirstChild(sourceName)
+		for _, sequence in if source then source:GetDescendants() else {} do
+			if sequence:IsA("KeyframeSequence") then
+				local older = copy:FindFirstChild(sequence.Name)
+				if older then
+					older:Destroy()
+				end
+				sequence:Clone().Parent = copy
+			end
+		end
+	end
+	copy.Parent = ReplicatedStorage
 end
 
 -- Court (built in code so every position lives in this file). Real-proportioned markings, scaled so the
@@ -664,9 +684,10 @@ end)
 -- tests/bot.spec.luau) decides ~10 times a second; this part gives it a body: movement, facing, dashes,
 -- animations, and its actions through `act` like anyone else.
 local BOT_ID = -424242
-local LOCOMOTION = { idle = 507766666, run = 507767714 } -- Roblox's own default R15 animations
+local LOCOMOTION = { idle = "rbxassetid://507766666", run = "rbxassetid://507767714" } -- Roblox's own default R15 animations
 
--- keep: leave it running if it already is (looping legs and stances); otherwise (re)start it (moves, shots).
+-- id: a content id (Hoops.animationId). keep: leave it running if it already is (looping legs and stances);
+-- otherwise (re)start it (moves, shots).
 local function botPlay(bot, name, id, fade, keep)
 	local track = bot.tracks[name]
 	if not track then
@@ -675,7 +696,7 @@ local function botPlay(bot, name, id, fade, keep)
 		if not animator or not id then
 			return nil
 		end
-		track = animator:LoadAnimation(new("Animation", { AnimationId = `rbxassetid://{id}` }))
+		track = animator:LoadAnimation(new("Animation", { AnimationId = id }))
 		bot.tracks[name] = track
 	end
 	if not (keep and track.IsPlaying) then
@@ -757,7 +778,7 @@ local function botNextMove(bot, root)
 	end
 	if act.move(bot, root, name) then
 		startPath(name, workspace:GetServerTimeNow())
-		botPlay(bot, name .. hand, Hoops.ANIMATIONS[Hoops.animationFor(name, hand)])
+		botPlay(bot, name .. hand, Hoops.animationId(Hoops.animationFor(name, hand)))
 		botDash(bot, name, hand)
 	end
 end
@@ -771,7 +792,7 @@ local function botShoot(bot, root, finish, hold)
 	local hand = ball:GetAttribute("Hand")
 	act.shootStart(bot, root, finish, workspace:GetServerTimeNow())
 	local shot = ball:GetAttribute("Move") -- the server may have turned it into a jump shot
-	local track = botPlay(bot, shot .. hand, Hoops.ANIMATIONS[Hoops.animationFor(shot, hand)])
+	local track = botPlay(bot, shot .. hand, Hoops.animationId(Hoops.animationFor(shot, hand)))
 	local move = Hoops.MOVES[shot]
 	if shot == "JumpShot" and track then
 		task.delay(move.duration, function() -- hold the set point while "the meter fills"
@@ -874,10 +895,10 @@ local function botThink(bot, root)
 	elseif a.kind == "shoot" then
 		botShoot(bot, root, a.finish, a.hold)
 	elseif a.kind == "steal" then
-		botPlay(bot, "StealSwipe", Hoops.ANIMATIONS.StealSwipe)
+		botPlay(bot, "StealSwipe", Hoops.animationId("StealSwipe"))
 		act.steal(bot, root)
 	elseif a.kind == "block" then
-		botPlay(bot, "Block", Hoops.ANIMATIONS.Block)
+		botPlay(bot, "Block", Hoops.animationId("Block"))
 		root.Parent.Humanoid.Jump = true
 		act.block(bot, root)
 	end
@@ -924,7 +945,7 @@ RunService.Heartbeat:Connect(function()
 			end
 			bot.overlay = overlay
 			if overlay then
-				botPlay(bot, overlay, Hoops.ANIMATIONS[overlay], 0.2, true)
+				botPlay(bot, overlay, Hoops.animationId(overlay), 0.2, true)
 			end
 		end
 	end

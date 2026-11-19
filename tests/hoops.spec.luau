@@ -153,4 +153,27 @@ for a, moveA in Hoops.MOVES do
 	end
 end
 
+-- Animation ids: Studio plays the copies saved in the place (no upload needed); published games the uploaded ids.
+do
+	local studio, registered = true, 0
+	local saved = { { Name = "Crossover" }, { Name = "DribbleStance" } }
+	local services = {
+		RunService = { IsStudio = function() return studio end },
+		ReplicatedStorage = { WaitForChild = function() return { GetChildren = function() return saved end } end },
+		KeyframeSequenceProvider = { RegisterKeyframeSequence = function(_, sequence)
+			registered += 1
+			return "temp://" .. sequence.Name
+		end },
+	}
+	game = { GetService = function(_, name) return services[name] end }
+	assert(Hoops.animationId("Crossover") == "temp://Crossover", "Studio plays the saved version")
+	assert(Hoops.animationId("DribbleStance") == "temp://DribbleStance", "Studio plays animations that aren't uploaded yet")
+	assert(Hoops.animationId("Block") == `rbxassetid://{Hoops.ANIMATIONS.Block}`, "Studio falls back to the uploaded id")
+	assert(registered == 2, "registered once, on first use")
+	studio = false
+	assert(Hoops.animationId("Crossover") == `rbxassetid://{Hoops.ANIMATIONS.Crossover}`, "published games use uploaded ids")
+	assert(Hoops.animationId("DribbleStance") == nil, "outside Studio, no upload means no animation")
+	game = nil
+end
+
 print("hoops.spec: all passed")

@@ -148,7 +148,17 @@ To polish one in Studio:
 3. Copy the placeholders from `PlaceholderAnimations` into `RBX_ANIMSAVES → Rig`.
 4. In the Animation Editor, open ⋯ → Load and pick one. Polish it, then use ⋯ → Publish to Roblox and copy the asset ID.
 
-Publish under the same account or group that owns the game. The game doesn't play these yet; send the IDs to wire them in.
+Publish under the same account or group that owns the game. The uploaded IDs go in `Hoops.ANIMATIONS`.
+
+### Testing animation changes without uploading
+
+In Studio, the game plays the animations saved in the place instead of the uploaded ones, so you only upload when you're ready to publish the game:
+
+- **Generated animations:** the placeholders in `ServerStorage → PlaceholderAnimations`. After `lune run tools/placeholder-animations`, rebuild or sync with Rojo and press Play.
+- **Your Animation Editor saves:** anything you save in the Animation Editor (`ServerStorage → RBX_ANIMSAVES`) under the same name as a game animation, for example `Crossover`, replaces the placeholder. Just save and press Play. Mirrored left-hand versions (`Crossover_L`) are separate animations, so save those too.
+- **Before publishing:** published games always use the uploaded IDs. Re-publish the animations you changed with **Overwrite** so the IDs stay the same. To check the uploaded versions in Studio, set `STUDIO_ANIMATIONS` to `false` in `src/shared/Hoops.luau`.
+
+This uses Roblox's Studio-only temporary animation IDs.
 
 ## Same body for everyone
 
@@ -161,7 +171,7 @@ The game's ball spots are measured from the animations on the real rig (`tools/p
 1. `lune run tools/placeholder-animations` regenerates the animation files. Leg lengths come from the rig, so feet stay planted.
 2. `lune run tools/preview/fit` measures the animated hands and rewrites those values in `src/shared/Hoops.luau`.
 3. `lune run tests/hoops.spec` checks that the gameplay rules still hold.
-4. Re-publish the changed animations in Studio with **Overwrite**, so their IDs stay the same.
+4. Press Play in Studio to try them right away (no upload needed). Before publishing the game, re-publish the changed animations with **Overwrite**, so their IDs stay the same.
 
 ## Previewing animations without Studio
 

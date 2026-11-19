@@ -201,9 +201,8 @@ ball:GetAttributeChangedSignal("Holder"):Connect(function()
 end)
 
 -- Animations --------------------------------------------------------------------------------------
--- IDs are in Hoops.ANIMATIONS (the server plays them on the practice bot too). Roblox shows animations I play
--- on my own character to everyone.
-local ANIMATIONS = Hoops.ANIMATIONS
+-- Hoops.animationId picks the id: the uploaded one, or in Studio the copy saved in the place (the server plays
+-- them on the practice bot too). Roblox shows animations I play on my own character to everyone.
 
 local tracks = {} -- [name] = AnimationTrack on my current character
 local stanceTrack = nil -- the looping stance overlay playing now (DribbleStance / DefenseStance)
@@ -217,10 +216,11 @@ local function play(name, fade)
 	if not tracks[name] then
 		local hum = me.Character and me.Character:FindFirstChildOfClass("Humanoid")
 		local animator = hum and hum:FindFirstChildOfClass("Animator")
-		if not animator or not ANIMATIONS[name] then
+		local id = Hoops.animationId(name)
+		if not animator or not id then
 			return nil
 		end
-		tracks[name] = animator:LoadAnimation(new("Animation", { AnimationId = `rbxassetid://{ANIMATIONS[name]}` }))
+		tracks[name] = animator:LoadAnimation(new("Animation", { AnimationId = id }))
 	end
 	tracks[name]:Play(fade or 0.1)
 	return tracks[name]

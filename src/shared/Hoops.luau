@@ -77,7 +77,7 @@ local Hoops = {
 
 -- Animations, published by the game's owner (the client plays them on players, the server on the practice bot).
 -- Dribble moves, stances, Layup and Dunk are authored from the right hand; "_L" is the left-hand mirror.
--- shortcut: DribbleStance/DefenseStance have no IDs until they're published; they just don't play until then
+-- shortcut: DribbleStance/DefenseStance have no IDs until they're published; outside Studio they don't play until then
 Hoops.ANIMATIONS = {
 	BehindBack = 97720416461332, BehindBack_L = 110947973652762,
 	BetweenLegs = 119329621765672, BetweenLegs_L = 84879209746710,
@@ -97,6 +97,33 @@ Hoops.ANIMATIONS = {
 	Stepback = 106350331428838, Stepback_L = 100781301809205,
 	StepbackEscape = 113030727017982, StepbackEscape_L = 130891165327063,
 }
+
+-- In Studio, play the animations saved in the place, so edits show without uploading anything: the server copies
+-- them (with your Animation Editor saves on top) to ReplicatedStorage.StudioAnimations, and each side registers them
+-- for a temporary id. Published games always use the uploaded ids above. Set false to test the uploaded ones in Studio.
+Hoops.STUDIO_ANIMATIONS = true
+local studioIds = nil -- [name] = temporary id, registered on first use
+-- The content id to play an animation by (nil if it has none yet).
+function Hoops.animationId(name)
+	if Hoops.STUDIO_ANIMATIONS and game:GetService("RunService"):IsStudio() then
+		if not studioIds then
+			studioIds = {}
+			local folder = game:GetService("ReplicatedStorage"):WaitForChild("StudioAnimations", 5)
+			local provider = game:GetService("KeyframeSequenceProvider")
+			for _, sequence in if folder then folder:GetChildren() else {} do
+				local ok, id = pcall(provider.RegisterKeyframeSequence, provider, sequence)
+				if ok then
+					studioIds[sequence.Name] = id
+				end
+			end
+		end
+		if studioIds[name] then
+			return studioIds[name]
+		end
+	end
+	local id = Hoops.ANIMATIONS[name]
+	return id and `rbxassetid://{id}`
+end
 
 -- Bursts of movement for stepbacks, side-steps and spins: { delay, direction ("back", "side" toward the ball
 -- hand, "forward"), speed, seconds }. Players and the practice bot both use them.
