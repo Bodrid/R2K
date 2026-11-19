@@ -64,22 +64,30 @@ The controller layout follows 2K.
 | Steal (on defense) | X / Square | E |
 | Pass (goes where you face) | A / Cross | R |
 | Block (jump, arms up) | Y / Triangle | F |
-| Dribble moves | Right stick (pro stick, below) | Letter keys (below) |
+| Dribble moves | Right stick (pro stick, below) | Right hand: Y U I / H J K / N M , (below) |
 | Escape moves (on offense), intense D (on defense) | Hold LT / L2 | Hold Ctrl |
 
 **Pro stick:** flick the right stick and let go. Directions are relative to your ball hand, so they mirror when the ball is in your left hand.
 
 | Right stick | Move | Key |
 |---|---|---|
-| Up (toward the basket) | Hesitation | V |
-| Toward your other hand | Crossover | Q |
-| Toward your ball hand, quick flick | In-and-out | C |
-| Toward your ball hand, hold it | Side-step (with L2: escape) | H |
-| Down and toward your other hand | Between the legs | Z |
-| Down and toward your ball hand | Behind the back | X |
-| Straight down | Stepback (with L2: escape) | G |
-| Half circle | Spin (with L2: escape) | B |
-| — | Double tween | T |
+| Up (toward the basket) | Hesitation | U |
+| Toward your other hand | Crossover | H |
+| Toward your ball hand, quick flick | In-and-out | K |
+| Toward your ball hand, hold it | Side-step (with L2: escape) | I |
+| Down and toward your other hand | Between the legs | N |
+| Down and toward your ball hand | Behind the back | , (comma) |
+| Straight down | Stepback (with L2: escape) | M |
+| Half circle | Spin (with L2: escape) | J |
+| — | Double tween | Y |
+
+**Keyboard dribble pad:** the move keys form one 3×3 block under your right hand, laid out like the touch dribble pad and the pro stick for the right hand. Hold Ctrl for the escape versions.
+
+| | | |
+|---|---|---|
+| Y: Tween | U: Hesi | I: Side-step |
+| H: Cross | J: Spin | K: In-and-out |
+| N: Between the legs | M: Stepback | , : Behind the back |
 
 **Chaining:** press the next move while one is still going, and it starts the moment the current one ends, so cross into tween into stepback flows like 2K. A shot pressed mid-move goes up as soon as the move finishes.
 

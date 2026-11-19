@@ -472,7 +472,7 @@ end
 
 -- Input -------------------------------------------------------------------------------------------
 -- Controller follows 2K: right stick = dribble moves, R2 = sprint, L2 = escape (offense) / intense D
--- (defense), X = shoot/steal, A = pass, Y = block. Keyboard: Shift sprint, Ctrl L2, letters for moves.
+-- (defense), X = shoot/steal, A = pass, Y = block. Keyboard: Shift sprint, Ctrl L2, moves on Y U I / H J K / N M ,.
 local HIGH = Enum.ContextActionPriority.High.Value -- above Roblox's own bindings (A is normally jump)
 
 -- Triggers are analog and also send Change events while held: only Begin and End/Cancel count.
@@ -607,24 +607,20 @@ ContextActionService:BindActionAtPriority("ProStick", function(_, state, input)
 	return Enum.ContextActionResult.Sink
 end, false, HIGH, Enum.KeyCode.Thumbstick2)
 
--- Keyboard moves (Ctrl for the escape versions).
-local KEYS = {
-	{ Enum.KeyCode.Q, "Crossover" },
-	{ Enum.KeyCode.Z, "BetweenLegs" },
-	{ Enum.KeyCode.X, "BehindBack" },
-	{ Enum.KeyCode.C, "InAndOut" },
-	{ Enum.KeyCode.V, "Hesitation" },
-	{ Enum.KeyCode.T, "DoubleTween" },
-	{ Enum.KeyCode.G, "Stepback", "StepbackEscape" },
-	{ Enum.KeyCode.H, "SideStep", "SideStepEscape" },
-	{ Enum.KeyCode.B, "SpinMove", "SpinEscape" },
+-- The dribble pad: every move in one 3x3 block, laid out like the pro stick for the right hand (up = hesi, toward
+-- the other hand = cross, down = stepback, center = spin). The keyboard has it under the right hand (Y U I / H J K /
+-- N M ,) and touch draws it as buttons. { label, key, move, escape version (with Ctrl / L2) }, rows top to bottom.
+local DRIBBLE_PAD = {
+	{ "TWEEN", Enum.KeyCode.Y, "DoubleTween" }, { "HESI", Enum.KeyCode.U, "Hesitation" }, { "SIDE", Enum.KeyCode.I, "SideStep", "SideStepEscape" },
+	{ "CROSS", Enum.KeyCode.H, "Crossover" }, { "SPIN", Enum.KeyCode.J, "SpinMove", "SpinEscape" }, { "IN-OUT", Enum.KeyCode.K, "InAndOut" },
+	{ "BTL", Enum.KeyCode.N, "BetweenLegs" }, { "STEP", Enum.KeyCode.M, "Stepback", "StepbackEscape" }, { "BEHIND", Enum.KeyCode.Comma, "BehindBack" },
 }
-for _, key in KEYS do
-	ContextActionService:BindAction("Key" .. key[2], function(_, state)
+for _, m in DRIBBLE_PAD do
+	ContextActionService:BindAction("Key" .. m[3], function(_, state)
 		if state == Enum.UserInputState.Begin then
-			tryMove(if l2Held and key[3] then key[3] else key[2])
+			tryMove(if l2Held and m[4] then m[4] else m[3])
 		end
-	end, false, key[1])
+	end, false, m[2])
 end
 
 -- Defense drill: the practice bot gets the ball at the top of the key (P, or D-pad up).
@@ -705,16 +701,12 @@ end)
 
 local dribblePad = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Parent = controls })
 local escapeButtons = {}
-for i, m in { -- right-hand pro stick directions, read like the stick: rows top to bottom
-	{ "TWEEN", "DoubleTween" }, { "HESI", "Hesitation" }, { "SIDE", "SideStep", "SideStepEscape" },
-	{ "CROSS", "Crossover" }, { "SPIN", "SpinMove", "SpinEscape" }, { "IN-OUT", "InAndOut" },
-	{ "BTL", "BetweenLegs" }, { "STEP", "Stepback", "StepbackEscape" }, { "BEHIND", "BehindBack" },
-} do
+for i, m in DRIBBLE_PAD do
 	local col, row = (i - 1) % 3, (i - 1) // 3
 	local b = touchButton(dribblePad, m[1], 58, 46, -363 + 64 * col, -143 + 52 * row, function()
-		tryMove(if l2Held and m[3] then m[3] else m[2])
+		tryMove(if l2Held and m[4] then m[4] else m[3])
 	end)
-	if m[3] then
+	if m[4] then
 		table.insert(escapeButtons, b)
 	end
 end
