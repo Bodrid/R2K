@@ -70,10 +70,41 @@ local function flash(label, text, color, seconds) -- show a label briefly with a
 		end
 	end)
 end
+-- The net swishes when a shot drops: every strand snaps down and springs back (just on this screen).
+local strands = nil -- { part, its resting CFrame }
+local function swish()
+	if not strands then
+		strands = {}
+		for _, strand in workspace:WaitForChild("Hoop"):GetChildren() do
+			if strand.Name == "Net" then
+				table.insert(strands, { strand, strand.CFrame })
+			end
+		end
+	end
+	for _, s in strands do
+		local strand, rest = s[1], s[2]
+		strand.CFrame = rest + Vector3.new(0, -0.2 - 0.25 * math.max(Hoops.RIM_Y - rest.Position.Y, 0), 0) -- lower strands drop further
+		TweenService:Create(strand, TweenInfo.new(0.7, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out), { CFrame = rest }):Play()
+	end
+end
 ReplicatedStorage:WaitForChild("Scored").OnClientEvent:Connect(function(scorerId, scorerName, points)
 	flash(popup, if scorerId == me.UserId then `+{points}  BUCKET!` else `{scorerName} +{points}`, popup.TextColor3, 1.5)
+	swish()
 end)
+
+-- Hint while the practice bot is around: how to practise defense.
+local hint = new("TextLabel", { AnchorPoint = Vector2.new(0.5, 1), Size = UDim2.fromOffset(360, 22), Position = UDim2.new(0.5, 0, 1, -16), BackgroundTransparency = 1, TextColor3 = Color3.new(1, 1, 1), TextTransparency = 0.25, TextStrokeTransparency = 0.6, TextScaled = true, Font = Enum.Font.GothamMedium, Text = "P / D-pad up: give the bot the ball (defense drill)", Visible = false, Parent = gui })
 gui.Parent = me:WaitForChild("PlayerGui")
+
+-- Player indicator: a ring on the floor under my player, orange with the ball, blue without (only I see it).
+local indicator = new("Model", { Name = "Indicator" })
+for i = 1, 24 do
+	local a = i / 24 * math.pi * 2
+	new("Part", { Anchored = true, CanCollide = false, CanQuery = false, CanTouch = false, CastShadow = false, Material = Enum.Material.Neon, Transparency = 0.25, Size = Vector3.new(0.18, 0.04, 0.55), CFrame = CFrame.new(math.cos(a) * 2, 0, math.sin(a) * 2) * CFrame.Angles(0, -a, 0), Parent = indicator })
+end
+indicator.PrimaryPart = indicator:GetChildren()[1]
+indicator.WorldPivot = CFrame.new()
+indicator.Parent = workspace
 
 -- Arms --------------------------------------------------------------------------------------------
 -- Roblox's IK solver pulls each hand to a target (a local world-space attachment). One rig per character
@@ -214,7 +245,7 @@ RunService.RenderStepped:Connect(function()
 			local moveHand = if mine then myMoveHand else ball:GetAttribute("MoveHand")
 			local moveAt = (if mine then myMoveAt else ball:GetAttribute("MoveAt")) or 0
 			pos, ballSide, hold = Hoops.ballSpot(cf, hand, move, moveHand, moveAt, now)
-			ball.CFrame = CFrame.new(pos)
+			ball.CFrame = CFrame.new(pos) * CFrame.fromAxisAngle(cf.RightVector, -os.clock() * 7) -- rolls as it's dribbled
 		end
 
 		-- Block: arms snap straight up, hold, and come down over BLOCK_TIME (the jump does the rest).
@@ -250,8 +281,14 @@ RunService.RenderStepped:Connect(function()
 	-- defense) slides facing the ball handler, everyone else turns where they run.
 	local root = myRoot()
 	local hum = root and me.Character:FindFirstChildOfClass("Humanoid")
+	hint.Visible = #bots:GetChildren() > 0
 	if not hum then
 		return
+	end
+	indicator:PivotTo(CFrame.new(root.Position.X, Hoops.FLOOR_Y + 0.05, root.Position.Z))
+	local ringColor = if iHaveBall() then Color3.fromRGB(255, 150, 40) else Color3.fromRGB(70, 160, 255)
+	for _, piece in indicator:GetChildren() do
+		piece.Color = ringColor
 	end
 	local stance = l2Held and not iHaveBall() and holderRoot ~= nil
 	if stance ~= inStance then

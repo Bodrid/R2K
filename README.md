@@ -11,6 +11,17 @@ You need [Rojo](https://rojo.space) 7.4 or newer.
 
 To play 1v1 locally, open the Test tab in Studio, set Clients and Servers to 2 players, and press Start.
 
+## The court
+
+- **Ball:** a pebbled leather basketball with real seams. It rolls as you dribble, carries backspin on shots, and leaves a faint trail on shots and passes.
+- **Hoop:**
+  - An NBA-style stanchion out of bounds, with a padded base and an arm over to the backboard.
+  - A glass backboard with a border, shooter's square and padded bottom edge.
+  - A smooth 24-piece solid rim on a flange.
+  - A criss-crossed net that swishes when a shot drops.
+- **Court:** full markings with lane hash marks, a team-color border band, an "R2K" wordmark, padded arena walls, bleachers, corner light towers with spotlights, a light haze, and a scoreboard above the hoop showing the live score.
+- **Player indicator:** a ring under your player, orange with the ball and blue on defense.
+
 ## Practice bot
 
 Alone in a server, a practice bot in a red jersey joins and plays you to 21. It leaves when a second real player joins. Press **P** (D-pad up on a controller) to give it the ball at the top of the key, for defense practice.

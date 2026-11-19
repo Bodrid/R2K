@@ -23,15 +23,22 @@ end
 local wood, paint, apron = Color3.fromRGB(205, 160, 105), Color3.fromRGB(28, 60, 140), Color3.fromRGB(30, 34, 48)
 local white, orange, black = Color3.new(1, 1, 1), Color3.fromRGB(255, 110, 20), Color3.fromRGB(15, 15, 18)
 local LINE_Y = Hoops.FLOOR_Y + 0.03
-local BASELINE, HALF, SIDE_X = RIM.Z - 5.5, 20, 28 -- the baseline sits just behind the backboard, like a real court
+local BASELINE, HALF, SIDE_X = Hoops.BASELINE_Z, Hoops.HALF_Z, Hoops.COURT_X
 local FT_Z, LANE = RIM.Z + 10.5, 6.75 -- free-throw line; half the lane's width
+local arena = new("Folder", { Name = "Arena", Parent = workspace })
+local hoop = new("Folder", { Name = "Hoop", Parent = workspace })
 
-local function decal(name, size, cf, color) -- thin, non-solid markings
-	return new("Part", { Name = name, Anchored = true, CanCollide = false, CanQuery = false, CastShadow = false, Size = size, CFrame = cf, Color = color, Material = Enum.Material.SmoothPlastic, Parent = workspace })
+local function part(props) -- an anchored part in the arena (props.Parent overrides)
+	props.Anchored = true
+	props.Parent = props.Parent or arena
+	return new("Part", props)
 end
-local function line(x1, z1, x2, z2) -- a floor line
+local function decal(name, size, cf, color) -- thin, non-solid markings
+	return part({ Name = name, CanCollide = false, CanQuery = false, CastShadow = false, Size = size, CFrame = cf, Color = color, Material = Enum.Material.SmoothPlastic })
+end
+local function line(x1, z1, x2, z2, width, color) -- a floor line
 	local a, b = Vector3.new(x1, LINE_Y, z1), Vector3.new(x2, LINE_Y, z2)
-	decal("Line", Vector3.new(0.3, 0.05, (b - a).Magnitude + 0.3), CFrame.lookAt((a + b) / 2, b), white)
+	decal("Line", Vector3.new(width or 0.3, 0.05, (b - a).Magnitude + (width or 0.3)), CFrame.lookAt((a + b) / 2, b), color or white)
 end
 local function arc(cx, cz, radius, fromDeg, toDeg) -- a floor arc in short straight pieces (0° = +X, 90° = toward half court)
 	local steps = math.ceil(math.abs(toDeg - fromDeg) / 4)
@@ -41,10 +48,18 @@ local function arc(cx, cz, radius, fromDeg, toDeg) -- a floor arc in short strai
 		decal("Line", Vector3.new(0.3, 0.05, radius * math.rad(math.abs(step)) + 0.05), CFrame.new(cx + math.cos(a) * radius, LINE_Y, cz + math.sin(a) * radius) * CFrame.Angles(0, -a, 0), white)
 	end
 end
+local function sign(text, size, cf, color, face) -- big text painted on a surface
+	local board = part({ Name = "Sign", CanCollide = false, CanQuery = false, CastShadow = false, Transparency = 1, Size = size, CFrame = cf })
+	local gui = new("SurfaceGui", { Face = face or Enum.NormalId.Top, SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud, PixelsPerStud = 40, LightInfluence = 1, Parent = board })
+	return new("TextLabel", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Text = text, TextScaled = true, Font = Enum.Font.GothamBlack, TextColor3 = color, Parent = gui })
+end
 
-new("Part", { Name = "Apron", Anchored = true, Size = Vector3.new(90, 1, 80), Position = Vector3.new(0, Hoops.FLOOR_Y - 0.52, -5), Color = apron, Material = Enum.Material.SmoothPlastic, Parent = workspace })
-new("Part", { Name = "Court", Anchored = true, Size = Vector3.new(SIDE_X * 2, 1, HALF - BASELINE), Position = Vector3.new(0, Hoops.FLOOR_Y - 0.5, (HALF + BASELINE) / 2), Color = wood, Material = Enum.Material.WoodPlanks, Parent = workspace })
+-- floor: the court on a dark apron, a team-color border band, the paint, a wordmark
+part({ Name = "Apron", Size = Vector3.new(96, 1, 86), Position = Vector3.new(0, Hoops.FLOOR_Y - 0.52, -5), Color = apron, Material = Enum.Material.SmoothPlastic })
+part({ Name = "Court", Size = Vector3.new(SIDE_X * 2, 1, HALF - BASELINE), Position = Vector3.new(0, Hoops.FLOOR_Y - 0.5, (HALF + BASELINE) / 2), Color = wood, Material = Enum.Material.WoodPlanks })
+decal("Border", Vector3.new(SIDE_X * 2 + 6, 0.02, HALF - BASELINE + 6), CFrame.new(0, Hoops.FLOOR_Y - 0.01, (HALF + BASELINE) / 2), paint)
 decal("Paint", Vector3.new(LANE * 2, 0.02, FT_Z - BASELINE), CFrame.new(0, Hoops.FLOOR_Y + 0.01, (FT_Z + BASELINE) / 2), paint)
+sign("R2K", Vector3.new(18, 0.05, 7), CFrame.new(0, Hoops.FLOOR_Y + 0.02, HALF - 7), Color3.fromRGB(150, 105, 60))
 line(-SIDE_X, BASELINE, SIDE_X, BASELINE) -- baseline
 line(-SIDE_X, HALF, SIDE_X, HALF) -- half court
 line(-SIDE_X, BASELINE, -SIDE_X, HALF) -- sidelines
@@ -52,21 +67,54 @@ line(SIDE_X, BASELINE, SIDE_X, HALF)
 line(-LANE, BASELINE, -LANE, FT_Z) -- lane
 line(LANE, BASELINE, LANE, FT_Z)
 line(-LANE, FT_Z, LANE, FT_Z) -- free-throw line
+for _, z in { BASELINE + 7, BASELINE + 9.5, BASELINE + 12 } do -- lane hash marks
+	line(-LANE - 0.8, z, -LANE, z)
+	line(LANE, z, LANE + 0.8, z)
+end
 arc(0, FT_Z, 5, 0, 180) -- free-throw circle
 arc(RIM.X, RIM.Z, 3.4, 0, 180) -- restricted area
 arc(0, HALF, 5, 180, 360) -- center circle
 -- Three-point line: exactly THREE_DIST from the rim, baseline to baseline.
 local corner = math.deg(math.asin((BASELINE - RIM.Z) / Hoops.THREE_DIST))
 arc(RIM.X, RIM.Z, Hoops.THREE_DIST, corner, 180 - corner)
-new("SpawnLocation", { Anchored = true, CanCollide = false, Transparency = 1, Size = Vector3.new(6, 0.2, 6), Position = CENTER - Vector3.new(0, 2.9, 0), Parent = workspace })
+new("SpawnLocation", { Anchored = true, CanCollide = false, Transparency = 1, Size = Vector3.new(6, 0.2, 6), Position = CENTER - Vector3.new(0, 2.9, 0), Parent = arena })
 
--- Hoop: padded pole, backboard with a border and shooter's square, solid rim.
-local poleZ = RIM.Z - Hoops.RIM_RADIUS - 1.1
-new("Part", { Name = "Pole", Anchored = true, Size = Vector3.new(0.6, Hoops.RIM_Y + 2, 0.6), Position = Vector3.new(0, (Hoops.RIM_Y + 2) / 2, poleZ), Color = Color3.fromRGB(45, 45, 52), Material = Enum.Material.Metal, Parent = workspace })
-new("Part", { Name = "Pad", Anchored = true, Size = Vector3.new(1.2, 5, 1.2), Position = Vector3.new(0, Hoops.FLOOR_Y + 2.5, poleZ), Color = paint, Material = Enum.Material.SmoothPlastic, Parent = workspace })
-local board = new("Part", { Name = "Backboard", Anchored = true, Size = Vector3.new(7, 4.5, 0.3), Position = RIM + Vector3.new(0, 1.8, -(Hoops.RIM_RADIUS + 0.6)), Color = Color3.new(1, 1, 1), Transparency = 0.35, Material = Enum.Material.Glass, Parent = workspace })
+-- arena: padded walls round the apron, bleachers, light towers with real spotlights
+local WALL_X, WALL_BACK, WALL_FRONT = 46, -47, 37
+for _, w in {
+	{ Vector3.new(WALL_X * 2, 3, 1), Vector3.new(0, 0, WALL_BACK) },
+	{ Vector3.new(WALL_X * 2, 3, 1), Vector3.new(0, 0, WALL_FRONT) },
+	{ Vector3.new(1, 3, WALL_FRONT - WALL_BACK), Vector3.new(-WALL_X, 0, (WALL_FRONT + WALL_BACK) / 2) },
+	{ Vector3.new(1, 3, WALL_FRONT - WALL_BACK), Vector3.new(WALL_X, 0, (WALL_FRONT + WALL_BACK) / 2) },
+} do
+	local at = w[2] + Vector3.new(0, Hoops.FLOOR_Y + 1.5, 0)
+	part({ Name = "Wall", Size = w[1], Position = at, Color = Color3.fromRGB(22, 26, 38), Material = Enum.Material.Fabric })
+	part({ Name = "WallStripe", CanCollide = false, Size = w[1] + Vector3.new(0.05, -2.6, 0.05), Position = at + Vector3.new(0, 1.3, 0), Color = paint, Material = Enum.Material.SmoothPlastic })
+end
+for row = 0, 4 do -- bleachers along the right sideline
+	part({ Name = "Bleacher", Size = Vector3.new(3, 1 + row * 1.6, 52), Position = Vector3.new(WALL_X + 2 + row * 3, Hoops.FLOOR_Y + (1 + row * 1.6) / 2 - 0.5, -5), Color = if row % 2 == 0 then Color3.fromRGB(60, 64, 78) else Color3.fromRGB(48, 52, 64), Material = Enum.Material.Metal })
+end
+for _, x in { -WALL_X + 2, WALL_X - 2 } do -- light towers at the corners, aimed at the court
+	for _, z in { WALL_BACK + 2, WALL_FRONT - 2 } do
+		part({ Name = "LightPole", Size = Vector3.new(0.8, 34, 0.8), Position = Vector3.new(x, Hoops.FLOOR_Y + 17, z), Color = Color3.fromRGB(40, 42, 50), Material = Enum.Material.Metal })
+		local lamp = part({ Name = "Lamp", CanCollide = false, Size = Vector3.new(4, 1.2, 1.2), Position = Vector3.new(x, Hoops.FLOOR_Y + 34, z), Color = Color3.fromRGB(255, 245, 220), Material = Enum.Material.Neon })
+		lamp.CFrame = CFrame.lookAt(lamp.Position, Vector3.new(0, Hoops.FLOOR_Y, -5))
+		new("SpotLight", { Brightness = 2.2, Range = 60, Angle = 55, Face = Enum.NormalId.Front, Shadows = true, Color = Color3.fromRGB(255, 244, 225), Parent = lamp })
+	end
+end
+
+-- Hoop: an NBA-style stanchion out of bounds behind the baseline, an arm over to the backboard (bordered,
+-- shooter's square, padded edge), a smooth solid rim on a flange.
+local boardZ = RIM.Z - (Hoops.RIM_RADIUS + 0.6)
+local poleZ = BASELINE - 3
+part({ Name = "StanchionPad", Size = Vector3.new(4, 4.5, 4), Position = Vector3.new(0, Hoops.FLOOR_Y + 2.25, poleZ - 0.5), Color = paint, Material = Enum.Material.Fabric, Parent = hoop })
+part({ Name = "Pole", Size = Vector3.new(0.9, Hoops.RIM_Y + 3, 0.9), Position = Vector3.new(0, (Hoops.RIM_Y + 3) / 2, poleZ), Color = Color3.fromRGB(45, 45, 52), Material = Enum.Material.Metal, Parent = hoop })
+local armFrom, armTo = Vector3.new(0, Hoops.RIM_Y + 2.8, poleZ), Vector3.new(0, RIM.Y + 1.8, boardZ - 0.2)
+part({ Name = "Arm", Size = Vector3.new(0.6, 0.6, (armTo - armFrom).Magnitude), CFrame = CFrame.lookAt((armFrom + armTo) / 2, armTo), Color = Color3.fromRGB(45, 45, 52), Material = Enum.Material.Metal, Parent = hoop })
+local board = part({ Name = "Backboard", Size = Vector3.new(7, 4.5, 0.3), Position = Vector3.new(RIM.X, RIM.Y + 1.8, boardZ), Color = Color3.new(1, 1, 1), Transparency = 0.35, Material = Enum.Material.Glass, Parent = hoop })
 local function boardLine(width, height, x, y)
-	decal("BoardLine", Vector3.new(width, height, 0.02), CFrame.new(board.Position + Vector3.new(x, y, 0.16)), black)
+	local l = decal("BoardLine", Vector3.new(width, height, 0.02), CFrame.new(board.Position + Vector3.new(x, y, 0.16)), black)
+	l.Parent = hoop
 end
 boardLine(7, 0.14, 0, 2.18) -- border
 boardLine(7, 0.14, 0, -2.18)
@@ -76,41 +124,72 @@ boardLine(2.4, 0.1, 0, -1.65) -- shooter's square, just above the rim
 boardLine(2.4, 0.1, 0, 0.15)
 boardLine(0.1, 1.8, 1.2, -0.75)
 boardLine(0.1, 1.8, -1.2, -0.75)
-for i = 1, 12 do -- rim as a ring of solid segments so misses bounce off the iron for real
-	local a = i / 12 * math.pi * 2
-	new("Part", { Name = "Rim", Anchored = true, Size = Vector3.new(0.2, 0.2, 0.85), CFrame = CFrame.new(RIM + Vector3.new(math.cos(a), 0, math.sin(a)) * Hoops.RIM_RADIUS) * CFrame.Angles(0, -a, 0), Color = orange, Material = Enum.Material.Metal, Parent = workspace })
+part({ Name = "BoardPad", Size = Vector3.new(7.2, 0.35, 0.5), Position = board.Position + Vector3.new(0, -2.4, 0), Color = paint, Material = Enum.Material.Fabric, Parent = hoop })
+part({ Name = "Flange", Size = Vector3.new(0.7, 0.12, 0.75), Position = Vector3.new(RIM.X, RIM.Y - 0.05, boardZ + 0.5), Color = orange, Material = Enum.Material.Metal, Parent = hoop })
+for i = 1, 24 do -- rim as a ring of solid segments so misses bounce off the iron for real
+	local a = i / 24 * math.pi * 2
+	part({ Name = "Rim", Size = Vector3.new(0.22, 0.22, 0.42), CFrame = CFrame.new(RIM + Vector3.new(math.cos(a), 0, math.sin(a)) * Hoops.RIM_RADIUS) * CFrame.Angles(0, -a, 0), Color = orange, Material = Enum.Material.Metal, Parent = hoop })
 end
 
--- Lighting: a bright, clean gym.
+-- Scoreboard above the hoop: shows the game's live score (the same text as the on-screen banner).
+part({ Name = "ScoreboardBox", Size = Vector3.new(16, 5, 1.5), Position = Vector3.new(0, RIM.Y + 9, poleZ - 2), Color = Color3.fromRGB(14, 14, 18), Material = Enum.Material.Metal })
+local scoreboard = sign("", Vector3.new(15.4, 4.4, 0.05), CFrame.new(0, RIM.Y + 9, poleZ - 1.22), Color3.fromRGB(255, 205, 60), Enum.NormalId.Back)
+
+-- Lighting: a bright, clean arena with a little haze in the air.
 local Lighting = game:GetService("Lighting")
 Lighting.ClockTime, Lighting.Brightness = 14.5, 2.5
 Lighting.Ambient, Lighting.OutdoorAmbient = Color3.fromRGB(80, 80, 90), Color3.fromRGB(130, 130, 140)
 Lighting.EnvironmentDiffuseScale, Lighting.EnvironmentSpecularScale = 0.6, 0.6
 new("ColorCorrectionEffect", { Contrast = 0.08, Saturation = 0.12, Brightness = 0.02, Parent = Lighting })
 new("BloomEffect", { Intensity = 0.25, Size = 18, Threshold = 1.6, Parent = Lighting })
+new("Atmosphere", { Density = 0.22, Offset = 0.1, Haze = 1.2, Glare = 0.2, Color = Color3.fromRGB(200, 205, 220), Decay = Color3.fromRGB(110, 115, 130), Parent = Lighting })
 
--- Net: criss-crossed strands from the rim down to a narrower ring. Not solid, so made shots fall through.
-local NET_DROP, NET_BOTTOM = 2, Hoops.RIM_RADIUS * 0.6
-for i = 1, 12 do
-	local top = RIM + Vector3.new(math.cos(i / 12 * math.pi * 2), 0, math.sin(i / 12 * math.pi * 2)) * Hoops.RIM_RADIUS
-	for _, step in { -0.5, 0.5 } do
-		local b = (i + step) / 12 * math.pi * 2
-		local bottom = RIM + Vector3.new(math.cos(b) * NET_BOTTOM, -NET_DROP, math.sin(b) * NET_BOTTOM)
-		new("Part", { Name = "Net", Anchored = true, CanCollide = false, CanQuery = false, CastShadow = false, Size = Vector3.new(0.06, 0.06, (bottom - top).Magnitude), CFrame = CFrame.lookAt((top + bottom) / 2, bottom), Color = Color3.new(1, 1, 1), Parent = workspace })
+-- Net: criss-crossed strands from the rim through a mid ring to a narrower bottom ring. Not solid, so made
+-- shots fall through. Clients make it swish when a shot goes in.
+local NET_MID, NET_DROP = Hoops.RIM_RADIUS * 0.8, 2.1
+local NET_BOTTOM = Hoops.RIM_RADIUS * 0.6
+local function ringPoint(radius, a, drop)
+	return RIM + Vector3.new(math.cos(a) * radius, -drop, math.sin(a) * radius)
+end
+local function strand(a, b)
+	part({ Name = "Net", CanCollide = false, CanQuery = false, CastShadow = false, Size = Vector3.new(0.05, 0.05, (b - a).Magnitude), CFrame = CFrame.lookAt((a + b) / 2, b), Color = Color3.new(1, 1, 1), Material = Enum.Material.Fabric, Parent = hoop })
+end
+for i = 1, 16 do
+	local a = i / 16 * math.pi * 2
+	local half = math.pi / 16
+	for _, side in { -1, 1 } do
+		strand(ringPoint(Hoops.RIM_RADIUS, a, 0), ringPoint(NET_MID, a + side * half, NET_DROP * 0.5))
+		strand(ringPoint(NET_MID, a + side * half, NET_DROP * 0.5), ringPoint(NET_BOTTOM, a, NET_DROP))
 	end
 end
-
+-- The ball: pebbled leather with real seams (two great circles and the two curved side seams), welded on,
+-- massless and not solid so the physics are the ball's own. A faint trail shows on shots and passes.
 -- Persistent so instance streaming never removes the ball on any client.
 local ballModel = new("Model", { Name = "Basketball", ModelStreamingMode = Enum.ModelStreamingMode.Persistent })
+local R = Hoops.BALL_RADIUS
 local ball = new("Part", {
 	Name = "Ball",
 	Shape = Enum.PartType.Ball,
-	Size = Vector3.one * Hoops.BALL_RADIUS * 2,
-	Color = orange,
+	Size = Vector3.one * R * 2,
+	Color = Color3.fromRGB(214, 98, 34),
+	Material = Enum.Material.Leather,
 	CustomPhysicalProperties = PhysicalProperties.new(0.3, 0.5, 0.75, 1, 100), -- bouncy, and its bounce wins over the floor's
 	Position = CENTER,
 	Parent = ballModel,
 })
+local function seam(offset, axis) -- a thin disc through the ball; only its edge shows outside, as a seam line
+	local radius = math.sqrt(R * R - offset * offset) + 0.012
+	local cf = ball.CFrame * axis * CFrame.new(offset, 0, 0) -- a cylinder's round faces point along its X axis
+	local disc = new("Part", { Name = "Seam", Shape = Enum.PartType.Cylinder, Size = Vector3.new(0.035, radius * 2, radius * 2), CFrame = cf, Color = Color3.fromRGB(25, 18, 14), Material = Enum.Material.SmoothPlastic, Massless = true, CanCollide = false, CanQuery = false, CanTouch = false, CastShadow = false, Parent = ballModel })
+	new("WeldConstraint", { Part0 = ball, Part1 = disc, Parent = disc })
+end
+seam(0, CFrame.new()) -- over the top
+seam(0, CFrame.Angles(0, 0, math.rad(90))) -- the equator
+seam(R * 0.55, CFrame.new()) -- curved side seams
+seam(-R * 0.55, CFrame.new())
+local trailTop = new("Attachment", { Position = Vector3.new(0, R * 0.5, 0), Parent = ball })
+local trailBottom = new("Attachment", { Position = Vector3.new(0, -R * 0.5, 0), Parent = ball })
+local trail = new("Trail", { Attachment0 = trailTop, Attachment1 = trailBottom, Lifetime = 0.2, MinLength = 0.1, Enabled = false, FaceCamera = true, Color = ColorSequence.new(Color3.fromRGB(255, 225, 190)), Transparency = NumberSequence.new(0.55, 1), Parent = ball })
 ballModel.Parent = workspace
 
 local action = new("RemoteEvent", { Name = "Action", Parent = ReplicatedStorage })
@@ -228,6 +307,10 @@ end
 -- GAME_TO wins; after a make, the other one checks the ball up at the top of the key. More than 2: cutthroat.
 -- shortcut: no take-it-back after a steal or rebound and no out of bounds; add them if 1v1s feel loose
 local status = new("StringValue", { Name = "Status", Value = "Waiting for an opponent...", Parent = ReplicatedStorage })
+scoreboard.Text = status.Value
+status.Changed:Connect(function(text)
+	scoreboard.Text = text
+end)
 local CHECK = Vector3.new(0, Hoops.FLOOR_Y + 3, RIM.Z + Hoops.THREE_DIST + 4) -- top of the key, behind the arc
 local inGame, nextGameAt = false, 0
 
@@ -439,6 +522,7 @@ action.OnServerEvent:Connect(function(player, kind, value, at)
 end)
 
 RunService.Heartbeat:Connect(function()
+	trail.Enabled = ball:GetAttribute("Holder") == nil and ball.AssemblyLinearVelocity.Magnitude > 22 -- shots and passes
 	if ball:GetAttribute("Holder") then
 		local h = holder()
 		local hRoot = h and rootOf(h)
