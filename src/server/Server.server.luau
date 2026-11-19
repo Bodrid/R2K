@@ -194,6 +194,7 @@ ballModel.Parent = workspace
 
 local action = new("RemoteEvent", { Name = "Action", Parent = ReplicatedStorage })
 local scored = new("RemoteEvent", { Name = "Scored", Parent = ReplicatedStorage }) -- (scorerId, scorerName, points): the score popup
+local callout = new("RemoteEvent", { Name = "Callout", Parent = ReplicatedStorage }) -- (text): BLOCKED!, STOLEN! for everyone
 
 -- Everyone on the court: real players, plus the practice bot when someone's alone. To the rules a bot looks
 -- like a player (.Character, .UserId, .Name, .DisplayName); its UserId is negative, never a real player's.
@@ -304,7 +305,13 @@ local function release(position, velocity, lockOnly)
 end
 
 -- A block knocks the ball away from the blocker. Nobody can grab it for a moment, and a shot can't score.
+local function nameOf(root) -- the name shown over someone (their display name, or the bot's)
+	local hum = root.Parent:FindFirstChildOfClass("Humanoid")
+	return if hum and hum.DisplayName ~= "" then hum.DisplayName else root.Parent.Name
+end
+
 local function swat(position, blockerRoot)
+	callout:FireAllClients(`BLOCKED by {nameOf(blockerRoot)}!`)
 	lastShot = nil
 	table.clear(blocking)
 	release(position, blockerRoot.CFrame.LookVector * Hoops.SWAT_SPEED + Vector3.new(0, 8, 0))
@@ -562,6 +569,7 @@ RunService.Heartbeat:Connect(function()
 			-- a ball in a shot windup can only be blocked, not stolen (like 2K)
 			if r and not ball:GetAttribute("GatherAt") and Hoops.reaches(r.CFrame, spot) then
 				-- A steal knocks it loose away from the handler; whoever gets there first keeps it.
+				callout:FireAllClients(`STOLEN by {nameOf(r)}!`)
 				release(spot, ((spot - hRoot.Position) * FLAT).Unit * Hoops.POKE_SPEED + Vector3.new(0, 10, 0), h)
 				return
 			end

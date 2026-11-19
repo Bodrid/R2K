@@ -96,11 +96,20 @@ ReplicatedStorage:WaitForChild("Scored").OnClientEvent:Connect(function(scorerId
 	swish()
 end)
 
+-- Callouts: BLOCKED!, STOLEN! for everyone.
+local calloutLabel = new("TextLabel", { AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(460, 46), Position = UDim2.fromScale(0.5, 0.36), BackgroundTransparency = 1, TextStrokeTransparency = 0.1, TextScaled = true, Font = Enum.Font.GothamBlack, Visible = false, Parent = gui })
+ReplicatedStorage:WaitForChild("Callout").OnClientEvent:Connect(function(text)
+	flash(calloutLabel, text, Color3.fromRGB(110, 200, 255), 1.4)
+end)
+
 -- Hint while the practice bot is around: how to practise defense.
 local hint = new("TextLabel", { AnchorPoint = Vector2.new(0.5, 1), Size = UDim2.fromOffset(520, 20), Position = UDim2.new(0.5, 0, 1, -16), BackgroundTransparency = 1, TextColor3 = Color3.new(1, 1, 1), TextTransparency = 0.25, TextStrokeTransparency = 0.6, TextScaled = true, Font = Enum.Font.GothamMedium, Text = "", Visible = false, Parent = gui })
 -- After a steal or defensive rebound you have to take it back past the arc before you can score.
 local takeBack = new("TextLabel", { AnchorPoint = Vector2.new(0.5, 0), Size = UDim2.fromOffset(240, 26), Position = UDim2.new(0.5, 0, 0, 52), BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(255, 160, 60), TextStrokeTransparency = 0.3, TextScaled = true, Font = Enum.Font.GothamBlack, Text = "TAKE IT BACK", Visible = false, Parent = gui })
 gui.Parent = me:WaitForChild("PlayerGui")
+
+-- Ball shadow: a soft disc on the floor under the ball (reads the dribble's height and loose balls at a glance).
+local shadow = new("Part", { Name = "BallShadow", Anchored = true, CanCollide = false, CanQuery = false, CanTouch = false, CastShadow = false, Shape = Enum.PartType.Cylinder, Material = Enum.Material.SmoothPlastic, Color = Color3.new(0, 0, 0), Size = Vector3.new(0.02, 1.2, 1.2), Parent = workspace })
 
 -- Player indicator: a ring on the floor under my player, orange with the ball, blue without (only I see it).
 local indicator = new("Model", { Name = "Indicator" })
@@ -203,6 +212,10 @@ end
 -- Every frame: ball, arms, my movement, my stance -------------------------------------------------
 RunService.RenderStepped:Connect(function()
 	local now = workspace:GetServerTimeNow()
+	local height = math.max(ball.Position.Y - Hoops.FLOOR_Y - Hoops.BALL_RADIUS, 0)
+	shadow.Size = Vector3.new(0.02, 1.1 + height * 0.12, 1.1 + height * 0.12)
+	shadow.Transparency = math.clamp(0.45 + height * 0.06, 0.45, 0.95)
+	shadow.CFrame = CFrame.new(ball.Position.X, Hoops.FLOOR_Y + 0.04, ball.Position.Z) * CFrame.Angles(0, 0, math.rad(90)) -- lie flat
 	if shootStart then
 		local held = os.clock() - shootStart
 		fill.Size = UDim2.fromScale(1, math.min(held / METER_MAX, 1))
@@ -337,9 +350,11 @@ end)
 -- them as they move. Movement keys and the right stick are relative to it (up = toward the basket).
 local camera = workspace.CurrentCamera
 local cameraCF = nil
+local fovKick = 0 -- a quick zoom on dunks, easing back
 RunService:BindToRenderStep("ParkCamera", Enum.RenderPriority.Camera.Value + 1, function(dt)
 	camera.CameraType = Enum.CameraType.Scriptable
-	camera.FieldOfView = Hoops.CAMERA_FOV
+	fovKick *= math.exp(-4 * dt)
+	camera.FieldOfView = Hoops.CAMERA_FOV + fovKick
 	local root = myRoot()
 	if not root then
 		return
@@ -477,6 +492,11 @@ ContextActionService:BindActionAtPriority("ShootOrSteal", function(_, state)
 				end)
 			else
 				play(if finish == "DunkTwoHand" then finish else sided(finish))
+				if finish ~= "Layup" then
+					task.delay(startAt - now + Hoops.MOVES[finish].jumpAt + 0.25, function()
+						fovKick = -7 -- the slam
+					end)
+				end
 				task.delay(startAt - now + Hoops.MOVES[finish].jumpAt, function() -- jump at the animation's takeoff
 					local hum = me.Character and me.Character:FindFirstChildOfClass("Humanoid")
 					if hum and iHaveBall() and myMove == finish then -- still holding it: not released, stolen or blocked
