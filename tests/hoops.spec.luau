@@ -69,11 +69,20 @@ for name, move in Hoops.MOVES do
 		assert(math.abs(length - move.duration) < 0.01, `{name}: ball path lasts {move.duration}s but the animation lasts {length}s`)
 	end
 end
-local crossBounce = spot("Left", "Crossover", "Right", T, T + 0.25)
-assert(math.abs(crossBounce.X) < 0.35 and crossBounce.Z < 0 and math.abs(crossBounce.Y - floorY) < 1e-3, "a crossover bounces in front, between the feet (hips are 0.35 either side)")
-assert(spot("Left", "BehindBack", "Right", T, T + 0.26).Z > 0, "a behind-the-back goes behind the body")
--- Top of the head above the root, standing, from the calibrated rig (root -> lower torso -> upper torso -> head).
 local rig = require("@lune/serde").decode("json", fs.readFile("tools/preview/r15-rig.json"))
+local HIP -- how far out each hip is, from the calibrated rig
+for _, j in rig.joints do
+	if j.name == "RightUpperLeg" then
+		HIP = j.c0[1]
+	end
+end
+local function keyTime(name, i) -- time of a move's i-th path keyframe (timings are authored in Hoops.MOVES)
+	return Hoops.MOVES[name].path[i][1]
+end
+local crossBounce = spot("Left", "Crossover", "Right", T, T + keyTime("Crossover", 3))
+assert(math.abs(crossBounce.X) < HIP and crossBounce.Z < 0 and math.abs(crossBounce.Y - floorY) < 1e-3, "a crossover bounces in front, between the feet")
+assert(spot("Left", "BehindBack", "Right", T, T + keyTime("BehindBack", 3)).Z > 0, "a behind-the-back goes behind the body")
+-- Top of the head above the root, standing, from the calibrated rig (root -> lower torso -> upper torso -> head).
 local HEAD_TOP = rig.sizes.Head[2] / 2
 for _, j in rig.joints do
 	if j.name == "LowerTorso" or j.name == "UpperTorso" or j.name == "Head" then
@@ -108,5 +117,33 @@ local released = gathered + Vector3.new(0, 3, 0) -- the shot just left the hands
 local jumped = CFrame.lookAt(Vector3.new(0, Y + 3, -2.5), Vector3.new(0, Y + 3, 0))
 assert(not Hoops.blocks(defenderAt(0, -2.5), released), "standing, the released shot is over your hands")
 assert(Hoops.blocks(jumped, released), "a timed jump gets to the released shot")
+
+-- Pro stick: directions are relative to the ball hand, so the left hand mirrors the right.
+local stick = Hoops.proStick
+assert(stick(0, 1, 0, 0.1, 1, false) == "Hesitation", "up: hesitation")
+assert(stick(-1, 0, 0, 0.1, 1, false) == "Crossover" and stick(1, 0, 0, 0.1, -1, false) == "Crossover", "toward the other hand: crossover, either hand")
+assert(stick(1, 0, 0, 0.1, 1, false) == "InAndOut" and stick(1, 0, 0, 0.4, 1, false) == "SideStep", "toward the ball hand: flick in-and-out, hold side-step")
+assert(stick(0, -1, 0, 0.1, 1, false) == "Stepback" and stick(0, -1, 0, 0.1, 1, true) == "StepbackEscape", "down: stepback, L2 escape")
+assert(stick(-0.7, -0.7, 0, 0.1, 1, false) == "BetweenLegs" and stick(0.7, -0.7, 0, 0.1, 1, false) == "BehindBack", "down diagonals: tween to the off hand, behind the back to the ball hand")
+assert(stick(1, 0, 190, 0.3, 1, false) == "SpinMove" and stick(1, 0, -190, 0.3, -1, true) == "SpinEscape", "half circle: spin")
+for _, x in { -1, -0.7, 0, 0.7, 1 } do
+	for _, y in { -1, -0.7, 0, 0.7, 1 } do
+		if x ~= 0 or y ~= 0 then
+			assert(Hoops.MOVES[stick(x, y, 0, 0.1, 1, false)], "every direction is a real move")
+		end
+	end
+end
+
+-- Chaining: any move can follow any other, and the ball never jumps at the handover.
+for a, moveA in Hoops.MOVES do
+	if not moveA.finish then
+		local handAfter = if moveA.switch then "Left" else "Right"
+		local finishedA = spot(handAfter, a, "Right", T, T + moveA.duration)
+		for b in Hoops.MOVES do
+			local startB = spot(handAfter, b, handAfter, T + moveA.duration, T + moveA.duration)
+			assert(near(finishedA, startB), `{a} -> {b}: the ball jumps when chaining`)
+		end
+	end
+end
 
 print("hoops.spec: all passed")

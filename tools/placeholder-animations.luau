@@ -85,11 +85,11 @@ end
 
 -- keyframes: { { time, { [partName] = CFrame } } }. A part keyed anywhere gets a pose in every keyframe
 -- (missing = rest pose), so the editor shows full tracks; unkeyed parents only hold their children.
-local function build(name, keyframes)
+local function build(name, keyframes, options)
 	local seq = Instance.new("KeyframeSequence")
 	seq.Name = name
-	seq.Loop = false
-	seq.Priority = Enum.AnimationPriority.Action
+	seq.Loop = options and options.loop or false
+	seq.Priority = options and options.priority or Enum.AnimationPriority.Action
 	local keyed = {}
 	for _, kf in keyframes do
 		for part in kf[2] do
@@ -282,9 +282,18 @@ local function mirror(keyframes)
 end
 assert((mirrorCFrame(rot(10, 20, 30)).LookVector - rot(10, -20, -30).LookVector).Magnitude < 1e-6, "mirror flips yaw and roll")
 
-local function both(name, keyframes)
-	build(name, keyframes)
-	build(name .. "_L", mirror(keyframes))
+local function both(name, keyframes, options)
+	build(name, keyframes, options)
+	build(name .. "_L", mirror(keyframes), options)
+end
+
+-- 2K handles are quick: these play 15% faster than authored (the game's ball paths use the same timing).
+local QUICK = 0.85
+local function quick(keyframes)
+	for _, kf in keyframes do
+		kf[1] *= QUICK
+	end
+	return keyframes
 end
 
 local function frames(list) -- { time, bodyOptions } -> keyframes
@@ -299,30 +308,30 @@ end
 local BALL_R, BALL_L = { 15, 0, 15, 45, -15 }, { 15, 0, -15, 45, -15 } -- dribbling low at the side
 local GUARD_R, GUARD_L = { 35, 0, 25, 55 }, { 35, 0, -25, 55 } -- off arm up, protecting the ball
 local GATHER_R, GATHER_L = { 45, 0, -20, 100 }, { 45, 0, 20, 100 } -- both hands on the ball at the chest
-local READY = { drop = 0.45, left = 0.5, right = -0.4, lean = -15, R = BALL_R, L = GUARD_L }
+local READY = { drop = 0.55, left = 0.6, right = -0.5, leftOut = -5, rightOut = 5, lean = -18, R = BALL_R, L = GUARD_L }
 local READY_LEFT_HAND = with(READY, { R = GUARD_R, L = BALL_L })
 local TRIPLE_THREAT = { drop = 0.45, left = 0.17, right = -0.17, lean = -4, R = GATHER_R, L = GATHER_L }
 
-both("Crossover", frames({
+both("Crossover", quick(frames({
 	{ 0, READY },
 	{ 0.12, { drop = 0.5, left = 0.5, right = -0.4, lean = -16, twist = -6, tilt = -8, R = { 25, 0, -5, 60, -20 }, L = GUARD_L } }, -- sell right
 	{ 0.25, { drop = 0.55, left = 0.6, right = -0.33, lean = -18, twist = 14, tilt = 6, R = { 30, 20, -35, 70, -10 }, L = { 20, 0, -12, 40, -10 } } }, -- ball across
 	{ 0.38, { drop = 0.52, left = 0.5, right = -0.47, lean = -20, twist = 10, tilt = 4, R = { 40, -10, 20, 60 }, L = BALL_L } }, -- catch left, attack
 	{ 0.5, READY_LEFT_HAND },
-}))
+})))
 
 local TWEEN_DOWN = { drop = 0.7, left = 1.17, right = -0.73, lean = -22, R = { 5, 0, -12, 30, -10 }, L = GUARD_L } -- lunge, push ball down
 local TWEEN_THROUGH = { drop = 0.72, left = 1.2, right = -0.73, lean = -26, twist = -8, R = { -12, 0, -16, 20 }, L = { -15, 0, -18, 25 } } -- under the front leg
 local TWEEN_CATCH = { drop = 0.58, left = 0.83, right = -0.53, lean = -18, twist = 6, R = { 40, 0, 15, 60 }, L = BALL_L }
-both("BetweenLegs", frames({
+both("BetweenLegs", quick(frames({
 	{ 0, READY },
 	{ 0.12, TWEEN_DOWN },
 	{ 0.26, TWEEN_THROUGH },
 	{ 0.4, TWEEN_CATCH },
 	{ 0.55, READY_LEFT_HAND },
-}))
+})))
 
-both("DoubleTween", frames({ -- between the legs and straight back
+both("DoubleTween", quick(frames({ -- between the legs and straight back
 	{ 0, READY },
 	{ 0.12, TWEEN_DOWN },
 	{ 0.26, TWEEN_THROUGH },
@@ -330,23 +339,23 @@ both("DoubleTween", frames({ -- between the legs and straight back
 	{ 0.52, { drop = 0.7, left = 1.17, right = -0.73, lean = -24, R = { 30, 0, 20, 55 }, L = { 5, 0, 12, 30, -10 } } },
 	{ 0.64, { drop = 0.72, left = 1.2, right = -0.73, lean = -26, twist = 8, R = { -15, 0, 18, 25 }, L = { -12, 0, 16, 20 } } },
 	{ 0.85, READY },
-}))
+})))
 
-both("BehindBack", frames({
+both("BehindBack", quick(frames({
 	{ 0, READY },
 	{ 0.12, { drop = 0.5, left = 0.5, right = -0.4, lean = -14, twist = -15, R = { -30, 0, 15, 40 }, L = GUARD_L } }, -- pull the ball back
 	{ 0.26, { drop = 0.55, left = 0.53, right = -0.4, lean = -16, twist = 10, R = { -50, 0, -35, 20 }, L = { -25, 0, -25, 30 } } }, -- wrap behind the hips (elbow nearly straight so the hand really goes behind)
 	{ 0.4, { drop = 0.52, left = 0.5, right = -0.4, lean = -18, twist = 12, R = GUARD_R, L = BALL_L } },
 	{ 0.55, READY_LEFT_HAND },
-}))
+})))
 
-both("InAndOut", frames({ -- fake crossover
+both("InAndOut", quick(frames({ -- fake crossover
 	{ 0, READY },
 	{ 0.14, { drop = 0.55, left = 0.83, right = -0.4, lean = -16, twist = 18, tilt = 8, R = { 25, 15, -25, 60 }, L = GUARD_L } }, -- sell it: ball in, shoulders left
 	{ 0.28, { drop = 0.5, left = 0.5, right = -0.4, lean = -16, twist = -12, tilt = -6, R = { 20, -10, 25, 45 }, L = GUARD_L } }, -- snap it back out
 	{ 0.4, { drop = 0.55, left = 0.33, right = -0.83, lean = -22, twist = -6, R = { 10, 0, 15, 40 }, L = { 45, 0, -15, 65 } } }, -- go right
 	{ 0.5, READY },
-}))
+})))
 
 both("Hesitation", frames({
 	{ 0, READY },
@@ -401,6 +410,20 @@ both("SpinEscape", frames({
 	{ 0.44, spinFrame(330) },
 	{ 0.55, READY },
 }))
+
+-- Stance overlays (looping, Idle priority: under the moves and shots, over the default walk). Upper body only,
+-- so the default walk/run animation keeps the legs. Timed to one dribble per second-half.
+both("DribbleStance", {
+	{ 0, { UpperTorso = rot(-18), Head = rot(11), RightUpperArm = rot(15, 0, 15), RightLowerArm = rot(45), LeftUpperArm = rot(35, 0, -25), LeftLowerArm = rot(55) } },
+	{ 0.25, { UpperTorso = rot(-21, 3), Head = rot(13, -2), RightUpperArm = rot(18, 0, 15), RightLowerArm = rot(55), LeftUpperArm = rot(38, 0, -27), LeftLowerArm = rot(58) } },
+	{ 0.5, { UpperTorso = rot(-18), Head = rot(11), RightUpperArm = rot(15, 0, 15), RightLowerArm = rot(45), LeftUpperArm = rot(35, 0, -25), LeftLowerArm = rot(55) } },
+}, { loop = true, priority = Enum.AnimationPriority.Idle })
+
+build("DefenseStance", { -- L2 intense D: bent over, arms wide, active hands
+	{ 0, { UpperTorso = rot(-28), Head = rot(17), RightUpperArm = rot(40, 0, 60), RightLowerArm = rot(60), LeftUpperArm = rot(40, 0, -60), LeftLowerArm = rot(60) } },
+	{ 0.3, { UpperTorso = rot(-30, 4), Head = rot(18, -3), RightUpperArm = rot(50, 0, 55), RightLowerArm = rot(50), LeftUpperArm = rot(35, 0, -65), LeftLowerArm = rot(70) } },
+	{ 0.6, { UpperTorso = rot(-28), Head = rot(17), RightUpperArm = rot(40, 0, 60), RightLowerArm = rot(60), LeftUpperArm = rot(40, 0, -60), LeftLowerArm = rot(60) } },
+}, { loop = true, priority = Enum.AnimationPriority.Idle })
 
 -- Finishes at the rim. In the air, `air` lifts the body; the game also makes the character jump.
 local HIP_GATHER_R, HIP_GATHER_L = { 35, 0, -20, 90 }, { 35, 0, 20, 90 } -- both hands on the ball at the hip

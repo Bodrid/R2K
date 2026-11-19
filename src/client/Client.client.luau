@@ -1,11 +1,13 @@
--- Client: input, the shot meter, and animating players every frame (the ball handler and blockers).
+-- Client: input, camera, UI, and animating players every frame (the ball handler, blockers, defenders).
 -- Every client draws the ball and bends arms itself, from the server's attributes and the shared
 -- server clock, so nothing animated waits on the network and everyone (server included) agrees where
--- the ball is. Your own crossovers, gathers and blocks start instantly; the server hears after.
+-- the ball is. Your own moves, shots and blocks start instantly; the server hears after.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ContextActionService = game:GetService("ContextActionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local StarterGui = game:GetService("StarterGui")
 local Hoops = require(ReplicatedStorage:WaitForChild("Hoops"))
 local action = ReplicatedStorage:WaitForChild("Action")
 local ball = workspace:WaitForChild("Basketball"):WaitForChild("Ball")
@@ -13,6 +15,8 @@ local me = Players.LocalPlayer
 
 local METER_MAX = Hoops.PERFECT_HOLD + Hoops.SHOT_WINDOW
 local SIDE = { Right = 1, Left = -1 }
+local RIM = Vector3.new(0, Hoops.RIM_Y, Hoops.RIM_Z)
+local GREEN = Color3.fromRGB(70, 230, 110)
 
 local function new(className, props)
 	local inst = Instance.new(className)
@@ -22,46 +26,58 @@ local function new(className, props)
 	return inst
 end
 
--- Shot meter: fills while you hold shoot; release on the green line.
-local gui = new("ScreenGui", { Name = "ShotMeter", ResetOnSpawn = false })
-local meter = new("Frame", { Size = UDim2.fromOffset(16, 120), Position = UDim2.new(0.5, 60, 0.5, -60), BackgroundColor3 = Color3.new(0.1, 0.1, 0.1), Visible = false, Parent = gui })
+local function rounded(frame, radius) -- a soft corner and a thin outline, for a cleaner look
+	new("UICorner", { CornerRadius = UDim.new(0, radius), Parent = frame })
+	new("UIStroke", { Color = Color3.new(1, 1, 1), Transparency = 0.7, Thickness = 1.5, Parent = frame })
+	return frame
+end
+
+pcall(function() -- no Roblox health bar on the court
+	StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Health, false)
+end)
+
+-- UI ------------------------------------------------------------------------------------------------
+local gui = new("ScreenGui", { Name = "R2K", ResetOnSpawn = false })
+
+-- Shot meter: fills while you hold shoot and turns green inside the green window; release on the line.
+local meter = rounded(new("Frame", { Size = UDim2.fromOffset(14, 130), Position = UDim2.new(0.5, 70, 0.5, -95), BackgroundColor3 = Color3.fromRGB(20, 20, 26), BackgroundTransparency = 0.25, Visible = false, Parent = gui }), 7)
 local fill = new("Frame", { AnchorPoint = Vector2.new(0, 1), Position = UDim2.fromScale(0, 1), Size = UDim2.fromScale(1, 0), BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0, Parent = meter })
-new("Frame", { Size = UDim2.new(1, 8, 0, 3), Position = UDim2.new(0, -4, 1 - Hoops.PERFECT_HOLD / METER_MAX, -1), BackgroundColor3 = Color3.fromRGB(60, 220, 90), BorderSizePixel = 0, Parent = meter })
+new("UICorner", { CornerRadius = UDim.new(0, 7), Parent = fill })
+new("Frame", { Size = UDim2.new(1, 10, 0, 3), Position = UDim2.new(0, -5, 1 - Hoops.PERFECT_HOLD / METER_MAX, -1), BackgroundColor3 = GREEN, BorderSizePixel = 0, Parent = meter })
+-- What your release was: GREEN!, Slightly Early, Very Late...
+local feedback = new("TextLabel", { Size = UDim2.fromOffset(220, 30), Position = UDim2.new(0.5, 95, 0.5, -60), BackgroundTransparency = 1, TextColor3 = Color3.new(1, 1, 1), TextStrokeTransparency = 0.4, TextScaled = true, Font = Enum.Font.GothamBlack, TextXAlignment = Enum.TextXAlignment.Left, Visible = false, Parent = gui })
+
 -- Game status from the server: waiting, first to 21, who won.
 local status = ReplicatedStorage:WaitForChild("Status")
-local banner = new("TextLabel", { Size = UDim2.fromOffset(320, 36), Position = UDim2.new(0.5, -160, 0, 8), BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 0.4, TextColor3 = Color3.new(1, 1, 1), TextScaled = true, Font = Enum.Font.GothamBold, Text = status.Value, Parent = gui })
+local banner = rounded(new("TextLabel", { Size = UDim2.fromOffset(300, 34), Position = UDim2.new(0.5, -150, 0, 10), BackgroundColor3 = Color3.fromRGB(16, 16, 22), BackgroundTransparency = 0.2, TextColor3 = Color3.new(1, 1, 1), TextScaled = true, Font = Enum.Font.GothamBold, Text = status.Value, Parent = gui }), 10)
+new("UIPadding", { PaddingTop = UDim.new(0, 6), PaddingBottom = UDim.new(0, 6), Parent = banner })
 status.Changed:Connect(function(text)
 	banner.Text = text
 end)
--- Score popup: big text in the middle of the screen whenever anyone scores.
-local popup = new("TextLabel", { Size = UDim2.fromOffset(400, 70), Position = UDim2.new(0.5, -200, 0.25, 0), BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(255, 200, 40), TextStrokeTransparency = 0, TextScaled = true, Font = Enum.Font.GothamBlack, Visible = false, Parent = gui })
-local popupId = 0
-ReplicatedStorage:WaitForChild("Scored").OnClientEvent:Connect(function(scorer, points)
-	popup.Text = if scorer == me then `+{points}  BUCKET!` else `{scorer.DisplayName} +{points}`
-	popup.Visible = true
-	popupId += 1
-	local id = popupId
-	task.delay(1.5, function()
-		if popupId == id then -- a newer score keeps its own popup up
-			popup.Visible = false
+
+-- Score popup: pops in big whenever anyone scores.
+local popup = new("TextLabel", { AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(420, 70), Position = UDim2.fromScale(0.5, 0.27), BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(255, 205, 50), TextStrokeTransparency = 0, TextScaled = true, Font = Enum.Font.GothamBlack, Visible = false, Parent = gui })
+local function flash(label, text, color, seconds) -- show a label briefly with a little pop; a newer flash wins
+	label.Text, label.TextColor3, label.Visible = text, color, true
+	local scale = label:FindFirstChildOfClass("UIScale") or new("UIScale", { Parent = label })
+	scale.Scale = 0.6
+	TweenService:Create(scale, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+	local stamp = os.clock()
+	label:SetAttribute("Stamp", stamp)
+	task.delay(seconds, function()
+		if label:GetAttribute("Stamp") == stamp then
+			label.Visible = false
 		end
 	end)
+end
+ReplicatedStorage:WaitForChild("Scored").OnClientEvent:Connect(function(scorer, points)
+	flash(popup, if scorer == me then `+{points}  BUCKET!` else `{scorer.DisplayName} +{points}`, popup.TextColor3, 1.5)
 end)
 gui.Parent = me:WaitForChild("PlayerGui")
 
--- Fixed 2K-style camera: one spot behind the arc looking at the hoop. Re-applied every frame because
--- Roblox's camera scripts reset it on respawn. Movement keys stay relative to it (W = toward the hoop).
-local camera = workspace.CurrentCamera
-local CAMERA = CFrame.lookAt(Vector3.new(0, Hoops.FLOOR_Y + Hoops.CAMERA_HEIGHT, Hoops.RIM_Z + Hoops.CAMERA_BACK), Vector3.new(0, Hoops.FLOOR_Y + 2, Hoops.RIM_Z + 10))
-RunService:BindToRenderStep("FixedCamera", Enum.RenderPriority.Camera.Value + 1, function()
-	camera.CameraType = Enum.CameraType.Scriptable
-	camera.FieldOfView = Hoops.CAMERA_FOV
-	camera.CFrame = CAMERA
-end)
-
--- Arms: Roblox's IK solver pulls each hand to a target (a local world-space attachment).
--- One rig per character that needs one, made on first use.
--- shortcut: procedural arms look stiff for flashy moves; play keyframed animations for spins/step-backs later
+-- Arms --------------------------------------------------------------------------------------------
+-- Roblox's IK solver pulls each hand to a target (a local world-space attachment). One rig per character
+-- that needs one, made on first use.
 local rigs = {} -- [character] = { [side] = { target, pole, ik } }
 
 local function rigFor(char)
@@ -71,7 +87,7 @@ local function rigFor(char)
 		for side in SIDE do
 			local arm = { target = new("Attachment", { Parent = workspace.Terrain }), pole = new("Attachment", { Parent = workspace.Terrain }) }
 			local upperArm, hand = char:FindFirstChild(side .. "UpperArm"), char:FindFirstChild(side .. "Hand")
-			if upperArm and hand then -- R15 only; R6 characters play without arm motion
+			if upperArm and hand then -- R15 only
 				arm.ik = new("IKControl", { Type = Enum.IKControlType.Position, ChainRoot = upperArm, EndEffector = hand, Target = arm.target, Pole = arm.pole, Weight = 0, Parent = hum })
 			end
 			rig[side] = arm
@@ -81,14 +97,20 @@ local function rigFor(char)
 	return rigs[char]
 end
 
+-- My state ----------------------------------------------------------------------------------------
 -- While I hold the ball I predict my own state (server-clock times) so my moves start instantly;
 -- for everyone else I read the server's attributes.
 local myHand, myMove, myMoveHand, myMoveAt = "Right", nil, nil, 0
 local myBlockAt = 0
 local shootStart = nil -- os.clock() when I started holding shoot (for the meter)
+local sprinting, l2Held, inStance = false, false, false
 
 local function iHaveBall()
 	return ball:GetAttribute("Holder") == me.UserId
+end
+
+local function myRoot()
+	return me.Character and me.Character:FindFirstChild("HumanoidRootPart")
 end
 
 ball:GetAttributeChangedSignal("Holder"):Connect(function()
@@ -97,11 +119,64 @@ ball:GetAttributeChangedSignal("Holder"):Connect(function()
 	myMoveAt = ball:GetAttribute("MoveAt") or 0
 end)
 
-RunService.RenderStepped:Connect(function()
-	if shootStart then
-		fill.Size = UDim2.fromScale(1, math.min((os.clock() - shootStart) / METER_MAX, 1))
+-- Animations --------------------------------------------------------------------------------------
+-- Published by the game's owner; Roblox shows animations I play on my own character to everyone.
+-- Dribble moves, stances, Layup and Dunk are authored from the right hand; "_L" is the left-hand mirror.
+local ANIMATIONS = {
+	BehindBack = 97720416461332, BehindBack_L = 110947973652762,
+	BetweenLegs = 119329621765672, BetweenLegs_L = 84879209746710,
+	Block = 122226333881077,
+	Crossover = 95030049810426, Crossover_L = 89350225332049,
+	DefenseStance = nil, -- shortcut: new animations, no IDs until they're published; they just don't play until then
+	DoubleTween = 90668950670519, DoubleTween_L = 109728765164717,
+	DribbleStance = nil, DribbleStance_L = nil,
+	Dunk = 116371417778801, Dunk_L = 93055928232785, DunkTwoHand = 86215529812622,
+	Hesitation = 115297373334157, Hesitation_L = 127581419750676,
+	InAndOut = 125228112161422, InAndOut_L = 82658335277698,
+	JumpShot = 84279351689285,
+	Layup = 93244724633892, Layup_L = 79293506735548,
+	SideStep = 88825168648212, SideStep_L = 134410382844275,
+	SideStepEscape = 123156882174859, SideStepEscape_L = 90507189105160,
+	SpinEscape = 134644387886968, SpinEscape_L = 71163240371728,
+	SpinMove = 128724466317154,
+	StealSwipe = 140227535096778,
+	Stepback = 106350331428838, Stepback_L = 100781301809205,
+	StepbackEscape = 113030727017982, StepbackEscape_L = 130891165327063,
+}
+
+local tracks = {} -- [name] = AnimationTrack on my current character
+local stanceTrack = nil -- the looping stance overlay playing now (DribbleStance / DefenseStance)
+me.CharacterAdded:Connect(function()
+	table.clear(tracks)
+	stanceTrack = nil
+end)
+
+-- Play one of my animations; returns the track (nil if my character isn't ready or it has no ID yet).
+local function play(name, fade)
+	if not tracks[name] then
+		local hum = me.Character and me.Character:FindFirstChildOfClass("Humanoid")
+		local animator = hum and hum:FindFirstChildOfClass("Animator")
+		if not animator or not ANIMATIONS[name] then
+			return nil
+		end
+		tracks[name] = animator:LoadAnimation(new("Animation", { AnimationId = `rbxassetid://{ANIMATIONS[name]}` }))
 	end
+	tracks[name]:Play(fade or 0.1)
+	return tracks[name]
+end
+
+local function sided(name) -- the version for the hand the ball is in
+	return if myHand == "Left" then name .. "_L" else name
+end
+
+-- Every frame: ball, arms, my movement, my stance -------------------------------------------------
+RunService.RenderStepped:Connect(function()
 	local now = workspace:GetServerTimeNow()
+	if shootStart then
+		local held = os.clock() - shootStart
+		fill.Size = UDim2.fromScale(1, math.min(held / METER_MAX, 1))
+		fill.BackgroundColor3 = if Hoops.shotQuality(held) >= Hoops.GREEN then GREEN else Color3.new(1, 1, 1)
+	end
 
 	for char, rig in rigs do -- drop rigs of characters that left or respawned
 		if not char:IsDescendantOf(workspace) then
@@ -118,6 +193,7 @@ RunService.RenderStepped:Connect(function()
 
 	local id = ball:GetAttribute("Holder")
 	local holder = id and Players:GetPlayerByUserId(id)
+	local holderRoot = holder and holder.Character and holder.Character:FindFirstChild("HumanoidRootPart")
 	for _, player in Players:GetPlayers() do
 		local char = player.Character
 		local root = char and char:FindFirstChild("HumanoidRootPart")
@@ -166,59 +242,83 @@ RunService.RenderStepped:Connect(function()
 			end
 		end
 	end
+
+	-- My movement, like 2K: the ball handler faces the basket (unless sprinting), intense D (L2 on
+	-- defense) slides facing the ball handler, everyone else turns where they run.
+	local root = myRoot()
+	local hum = root and me.Character:FindFirstChildOfClass("Humanoid")
+	if not hum then
+		return
+	end
+	local stance = l2Held and not iHaveBall() and holderRoot ~= nil and holder ~= me
+	if stance ~= inStance then
+		inStance = stance
+		action:FireServer("stance", stance) -- intense D contests shots from further away
+	end
+	hum.WalkSpeed = if stance then Hoops.STANCE_SPEED elseif sprinting then Hoops.SPRINT_SPEED else Hoops.WALK_SPEED
+	local face = if iHaveBall() and not sprinting then RIM elseif stance then holderRoot.Position else nil
+	local flat = face and Vector3.new(face.X - root.Position.X, 0, face.Z - root.Position.Z)
+	local align = root:FindFirstChild("FaceAlign")
+	if not align then
+		local attachment = root:FindFirstChild("RootAttachment") or new("Attachment", { Parent = root })
+		align = new("AlignOrientation", { Name = "FaceAlign", Mode = Enum.OrientationAlignmentMode.OneAttachment, Attachment0 = attachment, Responsiveness = 25, MaxTorque = 1e6, Enabled = false, Parent = root })
+	end
+	local facing = flat ~= nil and flat.Magnitude > 0.5
+	hum.AutoRotate = not facing
+	align.Enabled = facing
+	if facing then
+		align.CFrame = CFrame.lookAt(root.Position, root.Position + flat)
+	end
+
+	-- Stance overlay under everything else: low dribble stance with the ball, defensive stance on L2.
+	local wanted = if iHaveBall() then sided("DribbleStance") elseif stance then "DefenseStance" else nil
+	local current = stanceTrack and stanceTrack.Name
+	if wanted ~= current then
+		if stanceTrack then
+			stanceTrack:Stop(0.2)
+		end
+		stanceTrack = wanted and play(wanted, 0.2)
+		if stanceTrack then
+			stanceTrack.Name = wanted
+		end
+	end
 end)
 
--- Animations (published by the game's owner; Roblox shows animations I play on my own character to
--- everyone). Dribble moves, Layup and Dunk are authored from the right hand; "_L" is the left-hand mirror.
-local ANIMATIONS = {
-	BehindBack = 97720416461332, BehindBack_L = 110947973652762,
-	BetweenLegs = 119329621765672, BetweenLegs_L = 84879209746710,
-	Block = 122226333881077,
-	Crossover = 95030049810426, Crossover_L = 89350225332049,
-	DoubleTween = 90668950670519, DoubleTween_L = 109728765164717,
-	Dunk = 116371417778801, Dunk_L = 93055928232785, DunkTwoHand = 86215529812622,
-	Hesitation = 115297373334157, Hesitation_L = 127581419750676,
-	InAndOut = 125228112161422, InAndOut_L = 82658335277698,
-	JumpShot = 84279351689285,
-	Layup = 93244724633892, Layup_L = 79293506735548,
-	SideStep = 88825168648212, SideStep_L = 134410382844275,
-	SideStepEscape = 123156882174859, SideStepEscape_L = 90507189105160,
-	SpinEscape = 134644387886968, SpinEscape_L = 71163240371728,
-	SpinMove = 128724466317154,
-	StealSwipe = 140227535096778,
-	Stepback = 106350331428838, Stepback_L = 100781301809205,
-	StepbackEscape = 113030727017982, StepbackEscape_L = 130891165327063,
+-- Camera ------------------------------------------------------------------------------------------
+-- 2K park cam: behind your player on the line from the rim, looking past them at the hoop, easing after
+-- them as they move. Movement keys and the right stick are relative to it (up = toward the basket).
+local camera = workspace.CurrentCamera
+local cameraCF = nil
+RunService:BindToRenderStep("ParkCamera", Enum.RenderPriority.Camera.Value + 1, function(dt)
+	camera.CameraType = Enum.CameraType.Scriptable
+	camera.FieldOfView = Hoops.CAMERA_FOV
+	local root = myRoot()
+	if not root then
+		return
+	end
+	local p = root.Position
+	local away = Vector3.new(p.X - RIM.X, 0, p.Z - RIM.Z)
+	local close = math.clamp(away.Magnitude / 8, 0, 1) -- right under the rim, settle to looking straight down court
+	away = (if away.Magnitude > 0.01 then away.Unit * close else Vector3.zero) + Vector3.zAxis * (1 - close)
+	away = if away.Magnitude > 0.01 then away.Unit else Vector3.zAxis
+	local eye = p + away * Hoops.CAMERA_DISTANCE + Vector3.new(0, Hoops.CAMERA_HEIGHT, 0)
+	local goal = CFrame.lookAt(eye, (p + Vector3.new(0, 1.5, 0)):Lerp(RIM, Hoops.CAMERA_LOOK))
+	cameraCF = if cameraCF then cameraCF:Lerp(goal, 1 - math.exp(-Hoops.CAMERA_SMOOTH * dt)) else goal
+	camera.CFrame = cameraCF
+end)
+
+-- Moves -------------------------------------------------------------------------------------------
+-- Bursts of movement for stepbacks, side-steps and spins: { delay, direction, speed, seconds }.
+local DASHES = {
+	Stepback = { 0.12, "back", 18, 0.3 },
+	StepbackEscape = { 0.1, "back", 20, 0.55 },
+	SideStep = { 0.12, "side", 18, 0.3 },
+	SideStepEscape = { 0.1, "side", 24, 0.35 },
+	SpinMove = { 0.05, "forward", 16, 0.45 },
+	SpinEscape = { 0.05, "forward", 20, 0.45 },
 }
 
-local tracks = {} -- [name] = AnimationTrack on my current character
-me.CharacterAdded:Connect(function()
-	table.clear(tracks)
-end)
-
--- Play one of my animations; returns the track (nil if my character isn't ready).
-local function play(name)
-	if not tracks[name] then
-		local hum = me.Character and me.Character:FindFirstChildOfClass("Humanoid")
-		local animator = hum and hum:FindFirstChildOfClass("Animator")
-		if not animator then
-			return nil
-		end
-		tracks[name] = animator:LoadAnimation(new("Animation", { AnimationId = `rbxassetid://{ANIMATIONS[name]}` }))
-	end
-	tracks[name]:Play(0.1)
-	return tracks[name]
-end
-
-local function sided(name) -- the version for the hand the ball is in
-	return if myHand == "Left" then name .. "_L" else name
-end
-
-local function myRoot()
-	return me.Character and me.Character:FindFirstChild("HumanoidRootPart")
-end
-
--- A short burst of speed for stepbacks, side-steps and spins (my character's physics are mine, so it's instant).
-local function dash(direction, speed, duration)
+local function dash(direction, speed, duration) -- my character's physics are mine, so it's instant
 	local root = myRoot()
 	if not root then
 		return
@@ -240,28 +340,82 @@ local function dash(direction, speed, duration)
 	end)
 end
 
--- Start a dribble move: predict it here so the ball moves instantly, tell the server, play the animation.
+-- Begin a move now: predict it so the ball moves instantly, tell the server, animate, dash.
 -- The move's path (Hoops.MOVES) decides where the ball goes and which hand it ends in.
-local function startMove(name, animation)
+local function begin(name, at)
+	local hand = myHand
+	if name == "SpinMove" and hand == "Left" then
+		name = "SpinEscape" -- SpinMove only has a right-hand animation
+	end
+	myMove, myMoveHand, myMoveAt = name, hand, at
+	myHand = if Hoops.MOVES[name].switch then (if hand == "Right" then "Left" else "Right") else hand
+	action:FireServer("move", name, at) -- send the start time so the server's ball matches mine
+	play(if name == "SpinMove" then name elseif hand == "Left" then name .. "_L" else name)
+	local d = DASHES[name]
+	if d then
+		task.delay(d[1], function()
+			local root = myRoot()
+			if root then
+				local cf = root.CFrame
+				dash(if d[2] == "back" then -cf.LookVector elseif d[2] == "side" then cf.RightVector * SIDE[hand] else cf.LookVector, d[3], d[4])
+			end
+		end)
+	end
+end
+
+-- Chain like 2K: a move pressed during a move is buffered (the latest press wins) and starts the
+-- moment the current one ends. Every path starts and ends at the dribble spot, so chains are seamless.
+local queued = nil
+local function tryMove(name)
+	if not iHaveBall() or shootStart then
+		return
+	end
 	local now = workspace:GetServerTimeNow()
 	local last = Hoops.MOVES[myMove or ""]
-	if not iHaveBall() or shootStart or (last and now < myMoveAt + last.duration) then
-		return false
+	local endsAt = if last then myMoveAt + last.duration else now
+	if now >= endsAt then
+		begin(name, now)
+		return
 	end
-	local switch = Hoops.MOVES[name].switch
-	myMove, myMoveHand, myMoveAt = name, myHand, now
-	myHand = if switch then (if myHand == "Right" then "Left" else "Right") else myHand
-	action:FireServer("move", name, now) -- send the start time so the server's ball matches mine
-	play(animation)
-	return true
+	if not queued then
+		task.delay(endsAt - now, function()
+			local nextMove = queued
+			queued = nil
+			if nextMove and iHaveBall() and not shootStart then
+				begin(nextMove, endsAt)
+			end
+		end)
+	end
+	queued = name
 end
+
+-- Input -------------------------------------------------------------------------------------------
+-- Controller follows 2K: right stick = dribble moves, R2 = sprint, L2 = escape (offense) / intense D
+-- (defense), X = shoot/steal, A = pass, Y = block. Keyboard: Shift sprint, Ctrl L2, letters for moves.
+local HIGH = Enum.ContextActionPriority.High.Value -- above Roblox's own bindings (A is normally jump)
+
+-- Triggers are analog and also send Change events while held: only Begin and End/Cancel count.
+local function isHeld(state, was)
+	return if state == Enum.UserInputState.Begin then true elseif state == Enum.UserInputState.Change then was else false
+end
+
+ContextActionService:BindActionAtPriority("Sprint", function(_, state)
+	sprinting = isHeld(state, sprinting)
+	return Enum.ContextActionResult.Pass
+end, false, HIGH, Enum.KeyCode.LeftShift, Enum.KeyCode.ButtonR2)
+
+ContextActionService:BindActionAtPriority("L2", function(_, state)
+	l2Held = isHeld(state, l2Held)
+	return Enum.ContextActionResult.Pass
+end, false, HIGH, Enum.KeyCode.LeftControl, Enum.KeyCode.ButtonL2)
 
 -- Same button shoots on offense and steals on defense, like 2K. Near the rim, a shot is a layup or dunk.
 local jumpShot = nil
-ContextActionService:BindAction("ShootOrSteal", function(_, state)
+ContextActionService:BindActionAtPriority("ShootOrSteal", function(_, state)
 	if state == Enum.UserInputState.Begin then
 		if iHaveBall() then
 			local now = workspace:GetServerTimeNow()
+			queued = nil -- the shot replaces any buffered move
 			shootStart = os.clock()
 			fill.Size = UDim2.fromScale(1, 0)
 			meter.Visible = true
@@ -297,30 +451,29 @@ ContextActionService:BindAction("ShootOrSteal", function(_, state)
 			action:FireServer("steal")
 		end
 	elseif shootStart and (state == Enum.UserInputState.End or state == Enum.UserInputState.Cancel) then
-		action:FireServer("shoot", os.clock() - shootStart)
+		local held = os.clock() - shootStart
+		action:FireServer("shoot", held)
 		shootStart = nil
 		meter.Visible = false
 		if jumpShot then
 			jumpShot:AdjustSpeed(1)
 			jumpShot = nil
 		end
+		local quality = Hoops.shotQuality(held)
+		local timing = if held < Hoops.PERFECT_HOLD then "Early" else "Late"
+		flash(feedback, if quality >= Hoops.GREEN then "GREEN!" else `{if quality >= 0.5 then "Slightly" else "Very"} {timing}`, if quality >= Hoops.GREEN then GREEN else Color3.fromRGB(255, 170, 60), 1)
 	end
-end, true, Enum.KeyCode.E, Enum.KeyCode.ButtonX)
+end, true, HIGH, Enum.KeyCode.E, Enum.KeyCode.ButtonX)
 
-ContextActionService:BindAction("Crossover", function(_, state)
-	if state == Enum.UserInputState.Begin then
-		startMove("Crossover", sided("Crossover"))
-	end
-end, true, Enum.KeyCode.Q, Enum.KeyCode.ButtonL1)
-
-ContextActionService:BindAction("Pass", function(_, state)
+ContextActionService:BindActionAtPriority("Pass", function(_, state)
 	if state == Enum.UserInputState.Begin and iHaveBall() then
+		queued = nil
 		action:FireServer("pass")
 	end
-end, true, Enum.KeyCode.R, Enum.KeyCode.ButtonB)
+end, true, HIGH, Enum.KeyCode.R, Enum.KeyCode.ButtonA)
 
 -- Block: jump with both arms up. Anyone can do it anywhere; it only matters near the ball handler.
-ContextActionService:BindAction("Block", function(_, state)
+ContextActionService:BindActionAtPriority("Block", function(_, state)
 	local now = workspace:GetServerTimeNow()
 	if state == Enum.UserInputState.Begin and not iHaveBall() and now - myBlockAt >= Hoops.BLOCK_COOLDOWN then
 		myBlockAt = now
@@ -331,53 +484,55 @@ ContextActionService:BindAction("Block", function(_, state)
 		play("Block")
 		action:FireServer("block")
 	end
-end, true, Enum.KeyCode.F, Enum.KeyCode.ButtonY)
+end, true, HIGH, Enum.KeyCode.F, Enum.KeyCode.ButtonY)
 
--- Dribble moves (keyboard and gamepad). The ball's path for each is in Hoops.MOVES.
--- dash: burst of movement { delay, direction, speed, time }. Hold Shift / L2 for the escape version.
-local escapeHeld = false
-ContextActionService:BindAction("Escape", function(_, state)
-	escapeHeld = state == Enum.UserInputState.Begin
-	return Enum.ContextActionResult.Pass
-end, false, Enum.KeyCode.LeftShift, Enum.KeyCode.ButtonL2)
+-- Pro stick: flick the right stick and let go; Hoops.proStick turns the flick into a move (tested there).
+-- The flick's direction is where it reached furthest; spins are a half circle.
+local flick = nil
+ContextActionService:BindActionAtPriority("ProStick", function(_, state, input)
+	local p = Vector2.new(input.Position.X, input.Position.Y)
+	if not flick then
+		if p.Magnitude > 0.6 then
+			flick = { peak = p, angle = math.atan2(p.Y, p.X), turned = 0, at = os.clock() }
+		end
+	elseif p.Magnitude > 0.3 and state ~= Enum.UserInputState.End then
+		local a = math.atan2(p.Y, p.X)
+		flick.turned += math.deg((a - flick.angle + math.pi) % (2 * math.pi) - math.pi)
+		flick.angle = a
+		if p.Magnitude > flick.peak.Magnitude then
+			flick.peak = p
+		end
+	else -- back to center: read the gesture
+		local f = flick
+		flick = nil
+		if iHaveBall() then
+			tryMove(Hoops.proStick(f.peak.X, f.peak.Y, f.turned, os.clock() - f.at, SIDE[myHand], l2Held))
+		end
+	end
+	return Enum.ContextActionResult.Sink
+end, false, HIGH, Enum.KeyCode.Thumbstick2)
 
-local MOVES = {
-	{ name = "BetweenLegs", keys = { Enum.KeyCode.Z, Enum.KeyCode.DPadLeft } },
-	{ name = "BehindBack", keys = { Enum.KeyCode.X, Enum.KeyCode.DPadRight } },
-	{ name = "InAndOut", keys = { Enum.KeyCode.C, Enum.KeyCode.DPadUp } },
-	{ name = "Hesitation", keys = { Enum.KeyCode.V, Enum.KeyCode.DPadDown } },
-	{ name = "DoubleTween", keys = { Enum.KeyCode.T } },
-	{ name = "Stepback", escape = "StepbackEscape", keys = { Enum.KeyCode.G, Enum.KeyCode.ButtonR1 }, dash = { 0.12, "back", 18, 0.3 }, escapeDash = { 0.1, "back", 20, 0.55 } },
-	{ name = "SideStep", escape = "SideStepEscape", keys = { Enum.KeyCode.H, Enum.KeyCode.ButtonR2 }, dash = { 0.12, "side", 18, 0.3 }, escapeDash = { 0.1, "side", 24, 0.35 } },
-	{ name = "SpinMove", escape = "SpinEscape", keys = { Enum.KeyCode.B, Enum.KeyCode.ButtonR3 }, dash = { 0.05, "forward", 16, 0.45 }, escapeDash = { 0.05, "forward", 20, 0.45 } },
+-- Keyboard moves (Ctrl for the escape versions).
+local KEYS = {
+	{ Enum.KeyCode.Q, "Crossover" },
+	{ Enum.KeyCode.Z, "BetweenLegs" },
+	{ Enum.KeyCode.X, "BehindBack" },
+	{ Enum.KeyCode.C, "InAndOut" },
+	{ Enum.KeyCode.V, "Hesitation" },
+	{ Enum.KeyCode.T, "DoubleTween" },
+	{ Enum.KeyCode.G, "Stepback", "StepbackEscape" },
+	{ Enum.KeyCode.H, "SideStep", "SideStepEscape" },
+	{ Enum.KeyCode.B, "SpinMove", "SpinEscape" },
 }
-for _, move in MOVES do
-	ContextActionService:BindAction(move.name, function(_, state)
-		if state ~= Enum.UserInputState.Begin then
-			return
+for _, key in KEYS do
+	ContextActionService:BindAction("Key" .. key[2], function(_, state)
+		if state == Enum.UserInputState.Begin then
+			tryMove(if l2Held and key[3] then key[3] else key[2])
 		end
-		-- SpinMove has no left-hand animation, so from the left hand a spin is always the spin escape.
-		local escape = (escapeHeld or (move.name == "SpinMove" and myHand == "Left")) and move.escape
-		local name = escape or move.name
-		local hand = myHand
-		if not startMove(name, if name == "SpinMove" then name else sided(name)) then
-			return
-		end
-		local d = if escape then move.escapeDash else move.dash
-		if d then
-			task.delay(d[1], function()
-				local root = myRoot()
-				if root then
-					local cf = root.CFrame
-					local dir = if d[2] == "back" then -cf.LookVector elseif d[2] == "side" then cf.RightVector * (if hand == "Left" then -1 else 1) else cf.LookVector
-					dash(dir, d[3], d[4])
-				end
-			end)
-		end
-	end, false, table.unpack(move.keys))
+	end, key[2] == "Crossover", key[1]) -- mobile gets a Cross button
 end
 
 ContextActionService:SetTitle("ShootOrSteal", "Shoot")
-ContextActionService:SetTitle("Crossover", "Cross")
+ContextActionService:SetTitle("KeyCrossover", "Cross")
 ContextActionService:SetTitle("Pass", "Pass")
 ContextActionService:SetTitle("Block", "Block")

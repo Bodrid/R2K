@@ -88,7 +88,7 @@ end
 -- the hand positions either side. Paths start at the dribble spot itself, and moves end there too
 -- (finishes end at their measured release point).
 local function fmt(x)
-	return string.format("%.3f", x):gsub("%.?0+$", ""):gsub("^%-0$", "0")
+	return string.format("%.4f", x):gsub("%.?0+$", ""):gsub("^%-0$", "0")
 end
 local names = {}
 for name in Hoops.MOVES do

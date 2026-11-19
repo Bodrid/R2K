@@ -25,26 +25,42 @@ With more than 2 players in a server, it plays as cutthroat: everyone for themse
 
 ## Controls
 
-| Action | Keyboard | Gamepad |
+The controller layout follows 2K.
+
+| Action | Controller | Keyboard |
 |---|---|---|
-| Shoot: hold, then release on the green line | E | X |
-| Steal (when defending) | E | X |
-| Crossover | Q | LB |
-| Pass (goes where you face) | R | B |
-| Block (jump, arms up) | F | Y |
-| Between the legs | Z | D-pad left |
-| Behind the back | X | D-pad right |
-| In-and-out | C | D-pad up |
-| Hesitation | V | D-pad down |
-| Double tween | T | |
-| Stepback | G | RB |
-| Side-step (toward your ball hand) | H | RT |
-| Spin | B | Right stick click |
-| Escape version of stepback, side-step and spin | Hold Shift | Hold LT |
+| Move | Left stick | WASD |
+| Sprint (turbo) | RT / R2 | Shift |
+| Shoot: hold, then release on the green line | X / Square | E |
+| Steal (on defense) | X / Square | E |
+| Pass (goes where you face) | A / Cross | R |
+| Block (jump, arms up) | Y / Triangle | F |
+| Dribble moves | Right stick (pro stick, below) | Letter keys (below) |
+| Escape moves (on offense), intense D (on defense) | Hold LT / L2 | Hold Ctrl |
 
-Shoot near the rim to finish with a layup, or a dunk when very close. Further out, it's a jump shot. Dribble moves are keyboard and gamepad only for now.
+**Pro stick:** flick the right stick and let go. Directions are relative to your ball hand, so they mirror when the ball is in your left hand.
 
-On mobile, these controls appear as on-screen buttons.
+| Right stick | Move | Key |
+|---|---|---|
+| Up (toward the basket) | Hesitation | V |
+| Toward your other hand | Crossover | Q |
+| Toward your ball hand, quick flick | In-and-out | C |
+| Toward your ball hand, hold it | Side-step (with L2: escape) | H |
+| Down and toward your other hand | Between the legs | Z |
+| Down and toward your ball hand | Behind the back | X |
+| Straight down | Stepback (with L2: escape) | G |
+| Half circle | Spin (with L2: escape) | B |
+| — | Double tween | T |
+
+**Chaining:** press the next move while one is still going, and it starts the moment the current one ends, so cross into tween into stepback flows like 2K. A shot pressed mid-move goes up as soon as the move finishes.
+
+**Facing:**
+- **With the ball:** you always face the basket, unless you're sprinting.
+- **Intense D (hold L2 on defense):** you drop into a stance and slide facing the ball handler. You move slower, but you contest shots from further away.
+
+**Shots:** shoot near the rim to finish with a layup, or a dunk when very close. Further out, it's a jump shot. After you release, the screen says how your timing was: GREEN!, Slightly Early, Very Late, and so on.
+
+**Mobile:** Shoot, Cross, Pass and Block appear as on-screen buttons. The other dribble moves are controller and keyboard only for now.
 
 ## Why dribbling has no lag
 
