@@ -24,6 +24,7 @@ local Hoops = {
 	DRIBBLE_FORWARD = 0.797,
 	DRIBBLE_TOP = -1.422, -- top of the bounce (ball center), below the root
 	HAND_LOW = -0.973, -- the dribble hand follows the ball down to here, then waits
+	SHOULDER_UP = 0.524, -- a one-hand ball above shoulder height sits on the palm (layups, dunks); below it the hand is on top
 	GATHER_HEIGHT = 1.131, -- where the ball sits during the shot windup; the shot launches from here
 	GATHER_FORWARD = 1.22, -- in front of the face, in reach of R15 arms
 	GATHER_TIME = 0.2, -- seconds to bring the ball up into the shot
@@ -90,10 +91,12 @@ local function sideOf(hand)
 	return hand == "Left" and -1 or 1
 end
 
--- Dribble moves: the ball's path, in the holder's body space, as { time, right, up, forward, hand } keyframes.
+-- Dribble moves and finishes: the ball's path, in the holder's body space, as { time, right, up, forward, hand } keyframes.
 -- hand: "R" or "L" (that hand has it), "both" (held in two hands), nil (in the air between hands), or "legs"
 -- (bouncing between the feet). up = "floor" is a bounce. Authored from the right hand; from the left hand the
 -- path is mirrored. Each path starts and ends at the top of the dribble, so moves join it seamlessly.
+-- Finishes (finish = true: layups, dunks) start there too but end at the release: the ball waits there until
+-- the shot goes up, and the shot launches from wherever the ball is. jumpAt: when the animation takes off.
 -- Positions are measured from the animations by tools/preview/fit.luau, which rewrites this block; edit
 -- timing and hands here, then re-run it.
 local S, T, F = Hoops.DRIBBLE_SIDE, Hoops.DRIBBLE_TOP, Hoops.DRIBBLE_FORWARD
@@ -130,6 +133,22 @@ Hoops.MOVES = {
 		{ 0.76, 1.259, -1.662, 0.57, "R" },
 		{ 0.85, S, T, F, "R" },
 	} },
+	Dunk = { switch = false, finish = true, jumpAt = 0.4, path = {
+		{ 0, S, T, F, "R" },
+		{ 0.15, 0, -0.182, 1.226, "both" },
+		{ 0.32, 0, -1.192, -0.044, "both" },
+		{ 0.5, 0, 2.036, 0.055, "both" },
+		{ 0.66, 1.02, 1.961, -0.896, "R" },
+		{ 0.8, 1.129, 2.23, 1.045, "R" },
+	} },
+	DunkTwoHand = { switch = false, finish = true, jumpAt = 0.38, path = {
+		{ 0, S, T, F, "R" },
+		{ 0.15, 0, -0.182, 1.226, "both" },
+		{ 0.3, 0, -1.021, -0.339, "both" },
+		{ 0.48, 0, 2.137, 0.324, "both" },
+		{ 0.64, 0, 1.455, -0.996, "both" },
+		{ 0.78, 0, 1.525, 1.34, "both" },
+	} },
 	Hesitation = { switch = false, path = {
 		{ 0, S, T, F, "R" },
 		{ 0.15, 1.144, -0.364, 0.908, "R" },
@@ -144,6 +163,13 @@ Hoops.MOVES = {
 		{ 0.38, 1.459, "floor", 0.599 },
 		{ 0.5, S, T, F, "R" },
 	} },
+	Layup = { switch = false, finish = true, jumpAt = 0.4, path = {
+		{ 0, S, T, F, "R" },
+		{ 0.15, 0, -0.182, 1.226, "both" },
+		{ 0.32, 0, 0.174, 1.025, "both" },
+		{ 0.5, 1.144, 2.532, 0.04, "R" },
+		{ 0.68, 1.06, 2.622, -0.29, "R" },
+	} },
 	SideStep = { switch = false, path = {
 		{ 0, S, T, F, "R" },
 		{ 0.1, 1.202, "floor", 0.892 },
@@ -155,7 +181,7 @@ Hoops.MOVES = {
 	SideStepEscape = { switch = false, path = {
 		{ 0, S, T, F, "R" },
 		{ 0.077, 1.202, "floor", 0.892 },
-		{ 0.2, 1.118, -0.057, 1.043, "R" },
+		{ 0.2, 1.118, 1.143, 1.043, "R" },
 		{ 0.323, 0.093, 0.228, 0.898, "both" },
 		{ 0.4, 0.039, 0.346, 0.873, "both" },
 		{ 0.462, S, T, F, "R" },
@@ -193,9 +219,9 @@ Hoops.MOVES = {
 	StepbackEscape = { switch = false, path = {
 		{ 0, S, T, F, "R" },
 		{ 0.09, 1.138, "floor", 0.897 },
-		{ 0.22, 0.968, 0.129, 1.041, "R" },
+		{ 0.22, 0.968, 1.329, 1.041, "R" },
 		{ 0.34, 0.968, "floor", 1.041 },
-		{ 0.46, 0.968, 0.128, 1.041, "R" },
+		{ 0.46, 0.968, 1.328, 1.041, "R" },
 		{ 0.58, 0, 0.179, 0.899, "both" },
 		{ 0.7, 0, 0.372, 0.855, "both" },
 		{ 0.8, S, T, F, "R" },
@@ -245,8 +271,9 @@ end
 function Hoops.ballSpot(rootCFrame, hand, move, moveHand, moveAt, gatherAt, now)
 	local floorUp = Hoops.FLOOR_Y + Hoops.BALL_RADIUS - rootCFrame.Position.Y -- root stays upright, so its up is world up
 	local m = move and Hoops.MOVES[move]
+	local finishing = m and m.finish
 	local right, up, forward, side, hold
-	if m and now < moveAt + m.duration then
+	if m and (finishing or now < moveAt + m.duration) then
 		right, up, forward, side, hold = onPath(m.path, m.hands, now - moveAt, floorUp)
 		right *= sideOf(moveHand)
 		side *= sideOf(moveHand)
@@ -257,7 +284,8 @@ function Hoops.ballSpot(rootCFrame, hand, move, moveHand, moveAt, gatherAt, now)
 		local s = 1 - math.abs(math.cos(math.pi * Hoops.DRIBBLE_HZ * since))
 		right, up, forward, side, hold = sideOf(hand) * S, lerp(T, floorUp, s), F, sideOf(hand), 0
 	end
-	local g = if gatherAt then math.clamp((now - gatherAt) / Hoops.GATHER_TIME, 0, 1) else 0
+	-- the jump shot gather (a finish's path already carries the ball up)
+	local g = if gatherAt and not finishing then math.clamp((now - gatherAt) / Hoops.GATHER_TIME, 0, 1) else 0
 	g = g * g * (3 - 2 * g) -- ease in and out
 	return offset(rootCFrame, lerp(right, 0, g), lerp(up, Hoops.GATHER_HEIGHT, g), lerp(forward, Hoops.GATHER_FORWARD, g)), side, math.max(hold, g)
 end

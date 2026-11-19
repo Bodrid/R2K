@@ -103,6 +103,21 @@ local function heldSpot(hRoot)
 	return Hoops.ballSpot(hRoot.CFrame, ball:GetAttribute("Hand"), ball:GetAttribute("Move"), ball:GetAttribute("MoveHand"), ball:GetAttribute("MoveAt"), ball:GetAttribute("GatherAt"), workspace:GetServerTimeNow())
 end
 
+-- Start a dribble move or finish on the ball. Uses the client's start time so its path lines up with ours,
+-- within MAX_BACKDATE (covers ping), and never before the last move has finished.
+local function startPath(name, at)
+	local move = Hoops.MOVES[name]
+	local now = workspace:GetServerTimeNow()
+	local t = if typeof(at) == "number" and at == at then math.clamp(at, now - Hoops.MAX_BACKDATE, now) else now
+	local last = Hoops.MOVES[ball:GetAttribute("Move") or ""]
+	t = math.max(t, ball:GetAttribute("MoveAt") + (if last then last.duration else 0))
+	local hand = ball:GetAttribute("Hand")
+	ball:SetAttribute("MoveHand", hand)
+	ball:SetAttribute("Move", name)
+	ball:SetAttribute("MoveAt", t)
+	ball:SetAttribute("Hand", if move.switch then (if hand == "Right" then "Left" else "Right") else hand)
+end
+
 -- lockOnly: lock just that player out of the pickup (passes, pokes); nil locks everyone (shots).
 local function release(position, velocity, lockOnly)
 	table.clear(reaching)
@@ -204,7 +219,7 @@ local function shoot(player, root, holdTime)
 	end
 
 	lastShot = { player = player, points = dist >= Hoops.THREE_DIST and 3 or 2 }
-	local from = Hoops.gatherSpot(root.CFrame) -- same spot clients draw the windup, so the ball doesn't jump
+	local from = heldSpot(root) -- wherever the ball is: the windup spot, or a layup/dunk path's current point
 	local t = Hoops.flightTime(dist)
 	release(from, Hoops.launchVelocity(from, target, t, Vector3.new(0, -workspace.Gravity, 0)))
 end
@@ -218,22 +233,19 @@ action.OnServerEvent:Connect(function(player, kind, value, at)
 
 	if kind == "move" then
 		local move = Hoops.MOVES[value]
-		if h == player and move then
-			-- Use the client's start time so its move lines up with ours, within MAX_BACKDATE (covers ping),
-			-- and never start before the last move has finished.
-			local now = workspace:GetServerTimeNow()
-			local t = if typeof(at) == "number" and at == at then math.clamp(at, now - Hoops.MAX_BACKDATE, now) else now
-			local last = Hoops.MOVES[ball:GetAttribute("Move") or ""]
-			t = math.max(t, ball:GetAttribute("MoveAt") + (if last then last.duration else 0))
-			local hand = ball:GetAttribute("Hand")
-			ball:SetAttribute("MoveHand", hand)
-			ball:SetAttribute("Move", value)
-			ball:SetAttribute("MoveAt", t)
-			ball:SetAttribute("Hand", if move.switch then (if hand == "Right" then "Left" else "Right") else hand)
+		local current = Hoops.MOVES[ball:GetAttribute("Move") or ""]
+		if h == player and move and not move.finish and not (current and current.finish) then
+			startPath(value, at)
 		end
 	elseif kind == "shootStart" then
 		if h == player then
 			shootStarts[player] = os.clock()
+			-- Near the rim the client asks for a layup or dunk; check it's really in range (with slack for ping).
+			local finish = Hoops.MOVES[value]
+			local rimDist = ((root.Position - RIM) * FLAT).Magnitude
+			if finish and finish.finish and rimDist <= (if value == "Layup" then Hoops.LAYUP_RANGE else Hoops.DUNK_RANGE) + 3 then
+				startPath(value, at)
+			end
 			ball:SetAttribute("GatherAt", workspace:GetServerTimeNow()) -- so everyone else sees the gather
 		end
 	elseif kind == "shoot" then

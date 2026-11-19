@@ -156,7 +156,8 @@ RunService.RenderStepped:Connect(function()
 					arm.pole.WorldPosition = cf * Vector3.new(x * 3, 1.5, 0) -- elbows out to the sides
 				else -- the hand that has the ball rides the top of each bounce; both hold it in gathers and shots
 					local dribble = math.clamp(0.5 + 0.5 * x * ballSide, 0, 1)
-					local onTop = Vector3.new(pos.X, math.max(pos.Y + Hoops.BALL_RADIUS, handLow), pos.Z)
+					local palmUp = pos.Y - cf.Position.Y > Hoops.SHOULDER_UP -- carried overhead: hand under the ball
+					local onTop = if palmUp then pos - Vector3.new(0, Hoops.BALL_RADIUS, 0) else Vector3.new(pos.X, math.max(pos.Y + Hoops.BALL_RADIUS, handLow), pos.Z)
 					arm.target.WorldPosition = onTop:Lerp(pos + cf.RightVector * x * (Hoops.BALL_RADIUS + 0.2), hold)
 					arm.pole.WorldPosition = cf * Vector3.new(x * 3, -1, 1.5) -- elbows bend out and back
 					weight = math.max(dribble, hold)
@@ -262,17 +263,29 @@ local jumpShot = nil
 ContextActionService:BindAction("ShootOrSteal", function(_, state)
 	if state == Enum.UserInputState.Begin then
 		if iHaveBall() then
-			shootStart, myGatherAt = os.clock(), workspace:GetServerTimeNow()
+			local now = workspace:GetServerTimeNow()
+			shootStart, myGatherAt = os.clock(), now
 			fill.Size = UDim2.fromScale(1, 0)
 			meter.Visible = true
-			action:FireServer("shootStart")
 			local root = myRoot()
 			local rimDist = root and Vector3.new(root.Position.X, 0, root.Position.Z - Hoops.RIM_Z).Magnitude or math.huge
 			if rimDist <= Hoops.LAYUP_RANGE then
-				local hum = me.Character:FindFirstChildOfClass("Humanoid")
-				hum.Jump = true
-				play(if rimDist > Hoops.DUNK_RANGE then sided("Layup") elseif math.random() < 0.3 then "DunkTwoHand" else sided("Dunk"))
+				-- Layup or dunk: the ball follows the finish's path (predicted here, checked by the server), and
+				-- the jump waits for the animation's takeoff. Like any move, it starts once the last one ends.
+				local finish = if rimDist > Hoops.DUNK_RANGE then "Layup" elseif math.random() < 0.3 then "DunkTwoHand" else "Dunk"
+				local last = Hoops.MOVES[myMove or ""]
+				local startAt = math.max(now, if last then myMoveAt + last.duration else now)
+				myMove, myMoveHand, myMoveAt = finish, myHand, startAt
+				action:FireServer("shootStart", finish, startAt)
+				play(if finish == "DunkTwoHand" then finish else sided(finish))
+				task.delay(startAt - now + Hoops.MOVES[finish].jumpAt, function()
+					local hum = me.Character and me.Character:FindFirstChildOfClass("Humanoid")
+					if hum and iHaveBall() and myMove == finish then -- still holding it: not released, stolen or blocked
+						hum.Jump = true
+					end
+				end)
 			else
+				action:FireServer("shootStart")
 				-- Jump shot: rise to the set point, hold it while the meter fills, release when you let go.
 				jumpShot = play("JumpShot")
 				local started = shootStart

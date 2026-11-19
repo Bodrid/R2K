@@ -53,7 +53,9 @@ for _, name in names do
 			local bottom = parts[foot].Position.Y - rig.sizes[foot][2] / 2 - Hoops.FLOOR_Y
 			lowestFoot, highestFoot = math.min(lowestFoot, bottom), math.max(highestFoot, bottom)
 		end
-		if ball then
+		local move = Hoops.MOVES[(name:gsub("_L$", ""))]
+		local released = move and move.finish and t > move.duration -- in a game the shot is gone by now
+		if ball and not released then
 			-- How far the game's arm IK must pull the animated hand(s) to the ball while a hand holds it:
 			-- one hand on top of the ball, or both hands on its sides. Skipped while the ball is in the air.
 			if hold >= 0.5 then
@@ -62,8 +64,11 @@ for _, name in names do
 				end
 			elseif math.abs(side) > 0.5 then
 				local hand = if side > 0 then "RightHand" else "LeftHand"
-				worstGap = math.max(worstGap, (ball + Vector3.new(0, R, 0) - parts[hand].Position).Magnitude)
+				local palm = if ball.Y - root.Position.Y > Hoops.SHOULDER_UP then -R else R -- same rule as the game's arms
+				worstGap = math.max(worstGap, (ball + Vector3.new(0, palm, 0) - parts[hand].Position).Magnitude)
 			end
+		end
+		if ball then
 			table.insert(trail, frame.ball)
 		end
 		if i % (40 // (FRAMES - 1)) == 0 then

@@ -85,7 +85,7 @@ Publish under the same account or group that owns the game. The game doesn't pla
 
 ## Calibrating the game to the animations
 
-The game's ball spots are measured from the animations on the real rig (`tools/preview/r15-rig.json`), not guessed. That covers the dribble spot, every move's ball path, the shot windup, the block hands and the steal reach. After changing any animation:
+The game's ball spots are measured from the animations on the real rig (`tools/preview/r15-rig.json`), not guessed. That covers the dribble spot, every move's ball path, each layup and dunk path, the shot windup, the block hands and the steal reach. Layups and dunks carry the ball along the animation's hands while you hold shoot, and the shot launches from wherever the ball is when you let go. After changing any animation:
 
 1. `lune run tools/placeholder-animations` regenerates the animation files. Leg lengths come from the rig, so feet stay planted.
 2. `lune run tools/preview/fit` measures the animated hands and rewrites those values in `src/shared/Hoops.luau`.

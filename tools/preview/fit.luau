@@ -22,25 +22,24 @@ local function body(root, p)
 	return dot(d, root.RightVector), dot(d, root.UpVector), dot(d, root.LookVector)
 end
 
--- Where the ball is when `hand` ("R", "L", "both") has it: under the palm (the arms' IK puts the hand on top
--- of the ball) or between both hands.
+local fitted = {}
+
+-- Where the ball is when `hand` ("R", "L", "both") has it: between both hands, or for one hand, below the
+-- palm while dribbling, on the palm when carried above the shoulders (the game's arms place the hand the same way).
 local function ballIn(name, t, hand)
 	local parts, root = Rig.at(name, t)
-	local p = if hand == "both"
-		then (parts.RightHand.Position + parts.LeftHand.Position) / 2
-		else parts[(if hand == "R" then "Right" else "Left") .. "Hand"].Position - Vector3.new(0, R, 0)
-	return body(root, p)
+	if hand == "both" then
+		return body(root, (parts.RightHand.Position + parts.LeftHand.Position) / 2)
+	end
+	local palm = parts[(if hand == "R" then "Right" else "Left") .. "Hand"].Position
+	local _, up = body(root, palm)
+	return body(root, palm + Vector3.new(0, if up > fitted.SHOULDER_UP then R else -R, 0))
 end
 
 local function between(name, t, a, b) -- midpoint of two parts, body space
 	local parts, root = Rig.at(name, t)
 	return body(root, (parts[a].Position + parts[b].Position) / 2)
 end
-
-local fitted = {}
-
--- The dribble: the right hand at the start of a move is the ready stance.
-fitted.DRIBBLE_SIDE, fitted.DRIBBLE_TOP, fitted.DRIBBLE_FORWARD = ballIn("Crossover", 0, "R")
 
 -- An arm's reach (shoulder to hand centre) and the right shoulder's position, body space, at time t.
 local joint = {}
@@ -57,6 +56,12 @@ local function shoulder(name, t)
 	local parts, root = Rig.at(name, t)
 	return Vector3.new(body(root, (parts.UpperTorso * roblox.CFrame.new(v(joint.RightUpperArm.c0))).Position))
 end
+
+-- Shoulder height, standing (any animation's first frame is the rest pose).
+fitted.SHOULDER_UP = shoulder("StealSwipe", 0).Y
+
+-- The dribble: the right hand at the start of a move is the ready stance.
+fitted.DRIBBLE_SIDE, fitted.DRIBBLE_TOP, fitted.DRIBBLE_FORWARD = ballIn("Crossover", 0, "R")
 
 -- How low the dribble hand can follow the ball: 95% of the arm's reach from the shoulder, but no more
 -- than 0.4 below the top of the bounce.
@@ -91,7 +96,8 @@ do
 end
 
 -- Move paths: hand keyframes from the hands, bounces between the feet ("legs") or along the way between
--- the hand positions either side. First and last keyframes are the dribble spot itself.
+-- the hand positions either side. Paths start at the dribble spot itself, and moves end there too
+-- (finishes end at their measured release point).
 local function fmt(x)
 	return string.format("%.3f", x):gsub("%.?0+$", ""):gsub("^%-0$", "0")
 end
@@ -105,7 +111,7 @@ for _, name in names do
 	local move = Hoops.MOVES[name]
 	local path, out = move.path, {}
 	for i, k in path do
-		if i == 1 or i == #path then
+		if i == 1 or (i == #path and not move.finish) then
 			out[i] = { k[1], if k[5] == "L" then "-S" else "S", "T", "F", k[5] }
 		elseif k[3] ~= "floor" then
 			local right, up, forward = ballIn(name, k[1], k[5])
@@ -129,7 +135,8 @@ for _, name in names do
 			out[i] = { k[1], right, "floor", forward, k[5] }
 		end
 	end
-	table.insert(lines, `\t{name} = \{ switch = {move.switch}, path = \{`)
+	local extra = if move.finish then `, finish = true, jumpAt = {move.jumpAt}` else ""
+	table.insert(lines, `\t{name} = \{ switch = {move.switch}{extra}, path = \{`)
 	for _, k in out do
 		local fields = {}
 		for j = 1, 4 do

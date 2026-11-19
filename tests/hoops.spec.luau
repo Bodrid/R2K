@@ -50,7 +50,12 @@ for name, move in Hoops.MOVES do
 	end
 	assert(near(spot(endHand, name, "Right", T, nil, T), right), `{name}: starts at the top of the dribble`)
 	local before, after = spot(endHand, name, "Right", T, nil, T + move.duration - 1e-6), spot(endHand, name, "Right", T, nil, T + move.duration)
-	assert(near(before, after) and near(after, if move.switch then left else right), `{name}: hands back to the dribble on the right side`)
+	if move.finish then -- a finish waits at its release point until the shot goes up (even mid-windup)
+		assert(near(spot(endHand, name, "Right", T, T, T + move.duration + 0.5), after), `{name}: waits at the release point`)
+		assert(move.jumpAt < move.duration, `{name}: takes off before the release`)
+	else
+		assert(near(before, after) and near(after, if move.switch then left else right), `{name}: hands back to the dribble on the right side`)
+	end
 	local mirrored = spot(if move.switch then "Right" else "Left", name, "Left", T, nil, T + move.duration / 2)
 	local original = spot(endHand, name, "Right", T, nil, T + move.duration / 2)
 	assert(near(mirrored, Vector3.new(-original.X, original.Y, original.Z)), `{name}: the left-hand version is a mirror`)
@@ -59,11 +64,20 @@ for name, move in Hoops.MOVES do
 	for _, keyframe in animation:GetChildren() do
 		length = math.max(length, keyframe.Time)
 	end
-	assert(math.abs(length - move.duration) < 0.01, `{name}: ball path lasts {move.duration}s but the animation lasts {length}s`)
+	if move.finish then
+		assert(move.duration < length, `{name}: releases before its animation ends`)
+	else
+		assert(math.abs(length - move.duration) < 0.01, `{name}: ball path lasts {move.duration}s but the animation lasts {length}s`)
+	end
 end
 local crossBounce = spot("Left", "Crossover", "Right", T, nil, T + 0.25)
 assert(math.abs(crossBounce.X) < 0.35 and crossBounce.Z < 0 and math.abs(crossBounce.Y - floorY) < 1e-3, "a crossover bounces in front, between the feet (hips are 0.35 either side)")
 assert(spot("Left", "BehindBack", "Right", T, nil, T + 0.26).Z > 0, "a behind-the-back goes behind the body")
+local function headTop(spotAt) -- how far above the top of the head (body space, measured rig) a ball is
+	return spotAt.Y - Y - 1.99
+end
+assert(headTop(spot("Right", "Dunk", "Right", T, T, T + 0.5)) > 0, "a dunk takes the ball up over the head")
+assert(headTop(spot("Right", "Layup", "Right", T, T, T + Hoops.MOVES.Layup.duration)) > -0.5, "a layup releases up high at full stretch")
 local spinHalf = spot("Right", "SpinMove", "Right", T, nil, T + 0.3)
 assert(spinHalf.Z > 0 and math.abs(spinHalf.X) < 1, "halfway through a spin the ball has swung round behind")
 
