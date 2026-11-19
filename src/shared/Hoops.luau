@@ -6,6 +6,9 @@ local Hoops = {
 	NEXT_GAME_DELAY = 4, -- the winner is shown this long before a new game starts
 
 	FLOOR_Y = 1, -- court top; sits on a default Baseplate (top at 0) without z-fighting
+	COURT_X = 28, -- sidelines at ±COURT_X (the server builds the court from these; the bot stays inside them)
+	BASELINE_Z = -25.5, -- just behind the backboard, like a real court
+	HALF_Z = 20, -- the half-court line
 	BALL_RADIUS = 0.6,
 	RIM_Y = 11,
 	RIM_Z = -20, -- the hoop is at x = 0; players shoot toward -Z
@@ -63,6 +66,34 @@ local Hoops = {
 	PICKUP_RANGE = 4,
 	PICKUP_LOCK = 0.5, -- after a shot nobody can grab the ball; after a pass or poke, only the old holder can't
 }
+
+-- Animations, published by the game's owner (the client plays them on players, the server on the practice bot).
+-- Dribble moves, stances, Layup and Dunk are authored from the right hand; "_L" is the left-hand mirror.
+-- shortcut: DribbleStance/DefenseStance have no IDs until they're published; they just don't play until then
+Hoops.ANIMATIONS = {
+	BehindBack = 97720416461332, BehindBack_L = 110947973652762,
+	BetweenLegs = 119329621765672, BetweenLegs_L = 84879209746710,
+	Block = 122226333881077,
+	Crossover = 95030049810426, Crossover_L = 89350225332049,
+	DoubleTween = 90668950670519, DoubleTween_L = 109728765164717,
+	Dunk = 116371417778801, Dunk_L = 93055928232785, DunkTwoHand = 86215529812622,
+	Hesitation = 115297373334157, Hesitation_L = 127581419750676,
+	InAndOut = 125228112161422, InAndOut_L = 82658335277698,
+	JumpShot = 84279351689285,
+	Layup = 93244724633892, Layup_L = 79293506735548,
+	SideStep = 88825168648212, SideStep_L = 134410382844275,
+	SideStepEscape = 123156882174859, SideStepEscape_L = 90507189105160,
+	SpinEscape = 134644387886968, SpinEscape_L = 71163240371728,
+	SpinMove = 128724466317154,
+	StealSwipe = 140227535096778,
+	Stepback = 106350331428838, Stepback_L = 100781301809205,
+	StepbackEscape = 113030727017982, StepbackEscape_L = 130891165327063,
+}
+
+-- The animation for a move from a given hand: the "_L" mirror from the left, except SpinMove (right only).
+function Hoops.animationFor(name, hand)
+	return if hand == "Left" and name ~= "SpinMove" and name ~= "DunkTwoHand" and name ~= "JumpShot" then name .. "_L" else name
+end
 
 -- 1 at a perfect release, falling to 0 at SHOT_WINDOW early or late.
 function Hoops.shotQuality(holdTime)
