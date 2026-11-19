@@ -90,6 +90,17 @@ Hoops.ANIMATIONS = {
 	StepbackEscape = 113030727017982, StepbackEscape_L = 130891165327063,
 }
 
+-- Bursts of movement for stepbacks, side-steps and spins: { delay, direction ("back", "side" toward the ball
+-- hand, "forward"), speed, seconds }. Players and the practice bot both use them.
+Hoops.DASHES = {
+	Stepback = { 0.12, "back", 18, 0.3 },
+	StepbackEscape = { 0.1, "back", 20, 0.55 },
+	SideStep = { 0.12, "side", 18, 0.3 },
+	SideStepEscape = { 0.1, "side", 24, 0.35 },
+	SpinMove = { 0.05, "forward", 16, 0.45 },
+	SpinEscape = { 0.05, "forward", 20, 0.45 },
+}
+
 -- The animation for a move from a given hand: the "_L" mirror from the left, except SpinMove (right only).
 function Hoops.animationFor(name, hand)
 	return if hand == "Left" and name ~= "SpinMove" and name ~= "DunkTwoHand" and name ~= "JumpShot" then name .. "_L" else name

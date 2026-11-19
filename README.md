@@ -11,6 +11,18 @@ You need [Rojo](https://rojo.space) 7.4 or newer.
 
 To play 1v1 locally, open the Test tab in Studio, set Clients and Servers to 2 players, and press Start.
 
+## Practice bot
+
+Alone in a server, a practice bot in a red jersey joins and plays you to 21. It leaves when a second real player joins. Press **P** (D-pad up on a controller) to give it the ball at the top of the key, for defense practice.
+
+It plays by the same rules as you:
+- **Its actions:** it moves, shoots, steals and blocks through the same server checks your buttons go through, so it can't cheat.
+- **It plays a beat behind:** it sees you about 0.2s late, like a person.
+- **Offense:** it attacks the rim. When you're in its lane, it reads which side you're shading, crosses you away from its ball hand, and spins when you're tight. It steps back near the arc and pulls up only if that made space. It picks shots by their real odds, and its release timing lands around perfect, so it greens some and misses some.
+- **Defense:** it stays between you and the rim, guarding where you're heading. Changes of direction beat it. It crouches into intense D once it's in front of you, swipes only when its reach would really touch the ball, and jumps at your set point, or at the takeoff of a layup or dunk.
+
+Its brain is `src/server/Bot.luau`, a pure module. `lune run tests/bot.spec` plays hundreds of simulated possessions against it. Difficulty knobs (reaction time, steal and block rates, shot spread and so on) are in `Brain.SKILL` at the top of that file.
+
 ## Play against real people
 
 A game starts as soon as two players are in a server. It's first to 21, with shots worth 2 or 3. After a make, the other player checks the ball at the top of the key. The winner gets a win on the scoreboard, and a new game starts. Alone in a server, you can shoot around while the screen says "Waiting for an opponent...".

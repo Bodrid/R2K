@@ -15,6 +15,9 @@
     "ServerScriptService": {
       "Server": {
         "$path": "src/server/Server.server.luau"
+      },
+      "Bot": {
+        "$path": "src/server/Bot.luau"
       }
     },
     "StarterPlayer": {

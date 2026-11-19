@@ -114,31 +114,59 @@ local ball = new("Part", {
 ballModel.Parent = workspace
 
 local action = new("RemoteEvent", { Name = "Action", Parent = ReplicatedStorage })
-local scored = new("RemoteEvent", { Name = "Scored", Parent = ReplicatedStorage }) -- tells everyone to show the score popup
+local scored = new("RemoteEvent", { Name = "Scored", Parent = ReplicatedStorage }) -- (scorerId, scorerName, points): the score popup
 
-local shootStarts = {} -- [player] = os.clock() when they started holding shoot
-local nextSteal = {} -- [player] = os.clock() when they may try again
-local reaching = {} -- [player] = os.clock() until their reach stays live
-local nextBlock = {} -- [player] = os.clock() when they may block again
-local blocking = {} -- [player] = os.clock() until their block stays live
+-- Everyone on the court: real players, plus the practice bot when someone's alone. To the rules a bot looks
+-- like a player (.Character, .UserId, .Name, .DisplayName); its UserId is negative, never a real player's.
+local bots = {}
+local botsFolder = new("Folder", { Name = "Bots", Parent = workspace })
+local function participants()
+	local list = Players:GetPlayers()
+	for _, bot in bots do
+		table.insert(list, bot)
+	end
+	return list
+end
+local function byId(id)
+	if id == nil then
+		return nil
+	end
+	local player = Players:GetPlayerByUserId(id)
+	if player then
+		return player
+	end
+	for _, bot in bots do
+		if bot.UserId == id then
+			return bot
+		end
+	end
+	return nil
+end
+
+-- Per participant:
+local shootStarts = {} -- os.clock() when they started holding shoot
+local nextSteal = {} -- os.clock() when they may try again
+local reaching = {} -- os.clock() until their reach stays live
+local nextBlock = {} -- os.clock() when they may block again
+local blocking = {} -- os.clock() until their block stays live
+local points, wins = {}, {} -- this game's points and total wins (players also see them in the leaderboard)
 local lastShot = nil -- { player, points } until the ball is caught
 local pickupLockUntil, pickupLockPlayer = 0, nil
 local prevY = ball.Position.Y
 
-local function rootOf(player)
-	local char = player.Character
+local function rootOf(p)
+	local char = p.Character
 	local hum = char and char:FindFirstChildOfClass("Humanoid")
 	return hum and hum.Health > 0 and char:FindFirstChild("HumanoidRootPart") or nil
 end
 
 local function holder()
-	local id = ball:GetAttribute("Holder")
-	return id and Players:GetPlayerByUserId(id)
+	return byId(ball:GetAttribute("Holder"))
 end
 
 -- Held-ball state lives in attributes with server-clock times, so everyone computes the same ball (Hoops.ballSpot).
 -- Set before Holder, so a client sees a new possession already in sync.
-local function give(player)
+local function give(p)
 	ball.Anchored = true
 	ball.CanCollide = false
 	ball:SetAttribute("Hand", "Right")
@@ -146,7 +174,7 @@ local function give(player)
 	ball:SetAttribute("MoveHand", nil)
 	ball:SetAttribute("MoveAt", workspace:GetServerTimeNow()) -- the dribble starts at the top, right now
 	ball:SetAttribute("GatherAt", nil)
-	ball:SetAttribute("Holder", player.UserId)
+	ball:SetAttribute("Holder", p.UserId)
 	lastShot = nil
 	table.clear(reaching)
 end
@@ -155,14 +183,19 @@ local function heldSpot(hRoot)
 	return Hoops.ballSpot(hRoot.CFrame, ball:GetAttribute("Hand"), ball:GetAttribute("Move"), ball:GetAttribute("MoveHand"), ball:GetAttribute("MoveAt"), workspace:GetServerTimeNow())
 end
 
+-- When the move (or shot) on the ball ends, server time.
+local function moveEndsAt()
+	local move = Hoops.MOVES[ball:GetAttribute("Move") or ""]
+	return (ball:GetAttribute("MoveAt") or 0) + (if move then move.duration else 0)
+end
+
 -- Start a dribble move or finish on the ball. Uses the client's start time so its path lines up with ours,
 -- within MAX_BACKDATE (covers ping), and never before the last move has finished.
 local function startPath(name, at)
 	local move = Hoops.MOVES[name]
 	local now = workspace:GetServerTimeNow()
 	local t = if typeof(at) == "number" and at == at then math.clamp(at, now - Hoops.MAX_BACKDATE, now) else now
-	local last = Hoops.MOVES[ball:GetAttribute("Move") or ""]
-	t = math.max(t, ball:GetAttribute("MoveAt") + (if last then last.duration else 0))
+	t = math.max(t, moveEndsAt())
 	local hand = ball:GetAttribute("Hand")
 	ball:SetAttribute("MoveHand", hand)
 	ball:SetAttribute("Move", name)
@@ -170,7 +203,7 @@ local function startPath(name, at)
 	ball:SetAttribute("Hand", if move.switch then (if hand == "Right" then "Left" else "Right") else hand)
 end
 
--- lockOnly: lock just that player out of the pickup (passes, pokes); nil locks everyone (shots).
+-- lockOnly: lock just that participant out of the pickup (passes, pokes); nil locks everyone (shots).
 local function release(position, velocity, lockOnly)
 	table.clear(reaching)
 	ball:SetAttribute("GatherAt", nil)
@@ -191,16 +224,30 @@ local function swat(position, blockerRoot)
 	release(position, blockerRoot.CFrame.LookVector * Hoops.SWAT_SPEED + Vector3.new(0, 8, 0))
 end
 
--- Game flow: a game starts once two players are in. First to GAME_TO wins; after a make, the other
--- player checks the ball up at the top of the key. With more than 2 in a server it plays as cutthroat.
+-- Game flow: a game starts once two are on the court (two players, or a player and the practice bot). First to
+-- GAME_TO wins; after a make, the other one checks the ball up at the top of the key. More than 2: cutthroat.
 -- shortcut: no take-it-back after a steal or rebound and no out of bounds; add them if 1v1s feel loose
 local status = new("StringValue", { Name = "Status", Value = "Waiting for an opponent...", Parent = ReplicatedStorage })
 local CHECK = Vector3.new(0, Hoops.FLOOR_Y + 3, RIM.Z + Hoops.THREE_DIST + 4) -- top of the key, behind the arc
 local inGame, nextGameAt = false, 0
 
+local function leaderstat(p, name) -- a player's leaderboard value (bots have none)
+	local stats = typeof(p) == "Instance" and p:FindFirstChild("leaderstats")
+	return stats and stats:FindFirstChild(name)
+end
+
+local function showScore()
+	local on = participants()
+	if #on == 2 then
+		status.Value = `{on[1].DisplayName} {points[on[1]] or 0}  -  {points[on[2]] or 0} {on[2].DisplayName}`
+	else
+		status.Value = `First to {Hoops.GAME_TO}`
+	end
+end
+
 local function checkBall(offense)
 	local defenseSpot = CHECK + Vector3.new(0, 0, -4) -- between the offense and the rim
-	for _, p in Players:GetPlayers() do
+	for _, p in participants() do
 		if rootOf(p) then
 			p.Character:PivotTo(if p == offense then CFrame.lookAt(CHECK, Vector3.new(RIM.X, CHECK.Y, RIM.Z)) else CFrame.lookAt(defenseSpot, CHECK))
 		end
@@ -210,25 +257,33 @@ local function checkBall(offense)
 	end
 end
 
-local function startGame(players)
-	for _, p in players do
-		p.leaderstats.Points.Value = 0
+local function startGame(on)
+	for _, p in on do
+		points[p] = 0
+		local stat = leaderstat(p, "Points")
+		if stat then
+			stat.Value = 0
+		end
 	end
 	inGame = true
-	status.Value = `First to {Hoops.GAME_TO}`
-	checkBall(players[math.random(#players)])
+	showScore()
+	checkBall(on[math.random(#on)])
 end
 
 local function onScore(scorer)
-	local stats = scorer.leaderstats
-	if stats.Points.Value >= Hoops.GAME_TO then
-		stats.Wins.Value += 1
+	if (points[scorer] or 0) >= Hoops.GAME_TO then
+		wins[scorer] = (wins[scorer] or 0) + 1
+		local stat = leaderstat(scorer, "Wins")
+		if stat then
+			stat.Value = wins[scorer]
+		end
 		status.Value = `{scorer.DisplayName} wins!`
 		inGame, nextGameAt = false, os.clock() + Hoops.NEXT_GAME_DELAY
 		return
 	end
+	showScore()
 	local others = {}
-	for _, p in Players:GetPlayers() do
+	for _, p in participants() do
 		if p ~= scorer and rootOf(p) then
 			table.insert(others, p)
 		end
@@ -236,7 +291,7 @@ local function onScore(scorer)
 	if #others == 0 then
 		return
 	end
-	-- Nobody grabs the ball while it drops through the net; then the other player checks it up.
+	-- Nobody grabs the ball while it drops through the net; then the other one checks it up.
 	pickupLockUntil, pickupLockPlayer = os.clock() + Hoops.CHECK_DELAY + 0.1, nil
 	task.delay(Hoops.CHECK_DELAY, function()
 		if inGame then
@@ -245,20 +300,20 @@ local function onScore(scorer)
 	end)
 end
 
--- The player's root if their reach or block (in `live`) is still going; otherwise forget it.
-local function liveRoot(live, player)
-	local r = os.clock() <= live[player] and rootOf(player)
+-- The participant's root if their reach or block (in `live`) is still going; otherwise forget it.
+local function liveRoot(live, p)
+	local r = os.clock() <= live[p] and rootOf(p)
 	if not r then
-		live[player] = nil
+		live[p] = nil
 	end
 	return r
 end
 
-local function shoot(player, root, holdTime)
+local function shoot(p, root, holdTime)
 	local dist = ((root.Position - RIM) * FLAT).Magnitude
 	local contested = false
-	for _, other in Players:GetPlayers() do
-		local r = other ~= player and rootOf(other)
+	for _, other in participants() do
+		local r = other ~= p and rootOf(other)
 		local range = Hoops.CONTEST_RANGE + (if r and r.Parent:GetAttribute("Stance") then Hoops.STANCE_CONTEST else 0) -- intense D
 		if r and (r.Position - root.Position).Magnitude <= range then
 			contested = true
@@ -271,79 +326,115 @@ local function shoot(player, root, holdTime)
 		target += Vector3.new(math.cos(a), 0, math.sin(a)) * Hoops.RIM_RADIUS -- aim at the iron: a real clank and rebound
 	end
 
-	lastShot = { player = player, points = dist >= Hoops.THREE_DIST and 3 or 2 }
-	local from = heldSpot(root) -- wherever the ball is: the windup spot, or a layup/dunk path's current point
+	lastShot = { player = p, points = dist >= Hoops.THREE_DIST and 3 or 2 }
+	local from = heldSpot(root) -- wherever the ball is on the shot's path
 	local t = Hoops.flightTime(dist)
 	release(from, Hoops.launchVelocity(from, target, t, Vector3.new(0, -workspace.Gravity, 0)))
+	-- backspin, around the shooter's right-hand axis (a real shot's spin; shows on the ball's seams)
+	ball.AssemblyAngularVelocity = root.CFrame.RightVector * 18
+end
+
+-- What anyone on the court can do. Players get here through their buttons (the remote below), the practice
+-- bot calls these directly; the checks are the same.
+local act = {}
+
+function act.move(p, root, name)
+	local move = Hoops.MOVES[name]
+	local current = Hoops.MOVES[ball:GetAttribute("Move") or ""]
+	if holder() == p and move and not move.finish and not (current and current.finish) then
+		return true, root
+	end
+	return false
+end
+
+function act.shootStart(p, root, name, at)
+	if holder() ~= p then
+		return
+	end
+	shootStarts[p] = os.clock()
+	-- Every shot is a path (Hoops.MOVES). Near the rim a layup or dunk is asked for: check it's really in range
+	-- (with slack for ping), otherwise it's a jump shot.
+	local finish = Hoops.MOVES[name]
+	local rimDist = ((root.Position - RIM) * FLAT).Magnitude
+	local inRange = rimDist <= (if name == "Layup" then Hoops.LAYUP_RANGE else Hoops.DUNK_RANGE) + 3
+	startPath(if finish and finish.finish and (name == "JumpShot" or inRange) then name else "JumpShot", at)
+	ball:SetAttribute("GatherAt", workspace:GetServerTimeNow()) -- marks a shot under way (no steals)
+end
+
+function act.shoot(p, root, hold)
+	local started = shootStarts[p]
+	shootStarts[p] = nil
+	if holder() ~= p or not started then
+		return
+	end
+	-- Trust the client's timing so lag doesn't ruin releases, unless it's far from what the server saw.
+	-- shortcut: a cheater can still claim perfect within HOLD_TOLERANCE, tighten or add anti-cheat before launch
+	local serverHold = os.clock() - started
+	if typeof(hold) ~= "number" or not (math.abs(hold - serverHold) <= Hoops.HOLD_TOLERANCE) then
+		hold = serverHold
+	end
+	shoot(p, root, hold)
+end
+
+function act.pass(p, root)
+	if holder() == p then
+		-- A pass is a real physics ball, so anyone near its path can pick it off.
+		-- shortcut: passes go where you face; aim at a teammate once teams exist
+		local from = root.CFrame * Vector3.new(0, 0.5, -1.5)
+		local to = root.CFrame * Vector3.new(0, 0.5, -Hoops.PASS_DIST)
+		release(from, Hoops.launchVelocity(from, to, Hoops.PASS_TIME, Vector3.new(0, -workspace.Gravity, 0)), p)
+	end
+end
+
+function act.steal(p, root)
+	-- A reach only counts near the handler. It stays live for REACH_TIME, checked every frame below.
+	local h = holder()
+	local hRoot = h and h ~= p and rootOf(h)
+	if hRoot and (hRoot.Position - root.Position).Magnitude <= Hoops.STEAL_RANGE and os.clock() >= (nextSteal[p] or 0) then
+		nextSteal[p] = os.clock() + Hoops.STEAL_COOLDOWN
+		reaching[p] = os.clock() + Hoops.REACH_TIME
+	end
+end
+
+function act.stance(p, _, on)
+	-- intense D (L2 on defense): only for someone without the ball
+	p.Character:SetAttribute("Stance", if on == true and holder() ~= p then true else nil)
+end
+
+function act.block(p, root)
+	local h = holder()
+	if h ~= p and os.clock() >= (nextBlock[p] or 0) then
+		nextBlock[p] = os.clock() + Hoops.BLOCK_COOLDOWN - 0.1 -- slack so the client's own cooldown never disagrees
+		p.Character:SetAttribute("BlockAt", workspace:GetServerTimeNow()) -- everyone plays the animation
+		-- Only near the ball handler (or a shooter while the shot is up) does the ball go live for contact,
+		-- until the animation ends. Anywhere else it's just the animation.
+		local carrier = h or (lastShot and lastShot.player)
+		local cRoot = carrier and carrier ~= p and rootOf(carrier)
+		if cRoot and (cRoot.Position - root.Position).Magnitude <= Hoops.BLOCK_RANGE then
+			blocking[p] = os.clock() + Hoops.BLOCK_TIME
+		end
+	end
+end
+
+function act.drill(_) -- practice: the bot gets the ball at the top of the key, so you can work on your defense
+	local bot = bots[1]
+	if bot and rootOf(bot) then
+		checkBall(bot)
+	end
 end
 
 action.OnServerEvent:Connect(function(player, kind, value, at)
 	local root = rootOf(player)
-	if not root then
+	local f = root and type(kind) == "string" and act[kind]
+	if not f then
 		return
 	end
-	local h = holder()
-
 	if kind == "move" then
-		local move = Hoops.MOVES[value]
-		local current = Hoops.MOVES[ball:GetAttribute("Move") or ""]
-		if h == player and move and not move.finish and not (current and current.finish) then
+		if f(player, root, value) then
 			startPath(value, at)
 		end
-	elseif kind == "shootStart" then
-		if h == player then
-			shootStarts[player] = os.clock()
-			-- Every shot is a path (Hoops.MOVES). Near the rim the client asks for a layup or dunk: check it's really in
-			-- range (with slack for ping), otherwise it's a jump shot.
-			local finish = Hoops.MOVES[value]
-			local rimDist = ((root.Position - RIM) * FLAT).Magnitude
-			local inRange = rimDist <= (if value == "Layup" then Hoops.LAYUP_RANGE else Hoops.DUNK_RANGE) + 3
-			startPath(if finish and finish.finish and (value == "JumpShot" or inRange) then value else "JumpShot", at)
-			ball:SetAttribute("GatherAt", workspace:GetServerTimeNow()) -- marks a shot under way (no steals)
-		end
-	elseif kind == "shoot" then
-		local started = shootStarts[player]
-		shootStarts[player] = nil
-		if h ~= player or not started then
-			return
-		end
-		-- Trust the client's timing so lag doesn't ruin releases, unless it's far from what the server saw.
-		-- shortcut: a cheater can still claim perfect within HOLD_TOLERANCE, tighten or add anti-cheat before launch
-		local serverHold = os.clock() - started
-		if typeof(value) ~= "number" or not (math.abs(value - serverHold) <= Hoops.HOLD_TOLERANCE) then
-			value = serverHold
-		end
-		shoot(player, root, value)
-	elseif kind == "pass" then
-		if h == player then
-			-- A pass is a real physics ball, so anyone near its path can pick it off.
-			-- shortcut: passes go where you face; aim at a teammate once teams exist
-			local from = root.CFrame * Vector3.new(0, 0.5, -1.5)
-			local to = root.CFrame * Vector3.new(0, 0.5, -Hoops.PASS_DIST)
-			release(from, Hoops.launchVelocity(from, to, Hoops.PASS_TIME, Vector3.new(0, -workspace.Gravity, 0)), player)
-		end
-	elseif kind == "steal" then
-		-- A reach only counts near the handler. It stays live for REACH_TIME, checked every frame below.
-		local hRoot = h and h ~= player and rootOf(h)
-		if hRoot and (hRoot.Position - root.Position).Magnitude <= Hoops.STEAL_RANGE and os.clock() >= (nextSteal[player] or 0) then
-			nextSteal[player] = os.clock() + Hoops.STEAL_COOLDOWN
-			reaching[player] = os.clock() + Hoops.REACH_TIME
-		end
-	elseif kind == "stance" then
-		-- intense D (L2 on defense): only for someone without the ball
-		player.Character:SetAttribute("Stance", if value == true and h ~= player then true else nil)
-	elseif kind == "block" then
-		if h ~= player and os.clock() >= (nextBlock[player] or 0) then
-			nextBlock[player] = os.clock() + Hoops.BLOCK_COOLDOWN - 0.1 -- slack so the client's own cooldown never disagrees
-			player.Character:SetAttribute("BlockAt", workspace:GetServerTimeNow()) -- everyone plays the animation
-			-- Only near the ball handler (or a shooter while the shot is up) does the ball go live for contact,
-			-- until the animation ends. Anywhere else it's just the animation.
-			local carrier = h or (lastShot and lastShot.player)
-			local cRoot = carrier and carrier ~= player and rootOf(carrier)
-			if cRoot and (cRoot.Position - root.Position).Magnitude <= Hoops.BLOCK_RANGE then
-				blocking[player] = os.clock() + Hoops.BLOCK_TIME
-			end
-		end
+	else
+		f(player, root, value, at)
 	end
 end)
 
@@ -390,10 +481,13 @@ RunService.Heartbeat:Connect(function()
 	if lastShot and prevY > RIM.Y and pos.Y <= RIM.Y and ((pos - RIM) * FLAT).Magnitude < Hoops.RIM_RADIUS then
 		local shot = lastShot
 		lastShot = nil
-		local stats = shot.player:FindFirstChild("leaderstats") -- gone if the shooter left mid-shot
-		if stats then
-			stats.Points.Value += shot.points
-			scored:FireAllClients(shot.player, shot.points)
+		if table.find(participants(), shot.player) then -- not if the shooter left mid-shot
+			points[shot.player] = (points[shot.player] or 0) + shot.points
+			local stat = leaderstat(shot.player, "Points")
+			if stat then
+				stat.Value = points[shot.player]
+			end
+			scored:FireAllClients(shot.player.UserId, shot.player.DisplayName, shot.points)
 			if inGame then
 				onScore(shot.player)
 			end
@@ -405,12 +499,267 @@ RunService.Heartbeat:Connect(function()
 		release(CENTER, Vector3.zero) -- fell off the map
 	else
 		local locked = os.clock() < pickupLockUntil
-		for _, p in Players:GetPlayers() do
+		for _, p in participants() do
 			local r = rootOf(p)
 			local lockedOut = locked and (pickupLockPlayer == nil or pickupLockPlayer == p)
 			if r and not lockedOut and (r.Position - pos).Magnitude <= Hoops.PICKUP_RANGE then
 				give(p)
 				break
+			end
+		end
+	end
+end)
+
+-- Practice bot ------------------------------------------------------------------------------------
+-- Appears when someone's alone, leaves when a second player joins. Its brain (Bot.luau, tested in
+-- tests/bot.spec.luau) decides ~10 times a second; this part gives it a body: movement, facing, dashes,
+-- animations, and its actions through `act` like anyone else.
+local Brain = require(script.Parent.Bot)(Hoops, Vector3, CFrame)
+local BOT_ID = -424242
+local LOCOMOTION = { idle = 507766666, run = 507767714 } -- Roblox's own default R15 animations
+
+-- keep: leave it running if it already is (looping legs and stances); otherwise (re)start it (moves, shots).
+local function botPlay(bot, name, id, fade, keep)
+	local track = bot.tracks[name]
+	if not track then
+		local hum = bot.Character:FindFirstChildOfClass("Humanoid")
+		local animator = hum and (hum:FindFirstChildOfClass("Animator") or new("Animator", { Parent = hum }))
+		if not animator or not id then
+			return nil
+		end
+		track = animator:LoadAnimation(new("Animation", { AnimationId = `rbxassetid://{id}` }))
+		bot.tracks[name] = track
+	end
+	if not (keep and track.IsPlaying) then
+		track:Play(fade or 0.1)
+	end
+	return track
+end
+
+local function makeBot()
+	local look = new("HumanoidDescription", {}) -- Roblox's default body, the one everything is calibrated to
+	local skin, jersey, shorts = Color3.fromRGB(160, 110, 80), Color3.fromRGB(200, 40, 50), Color3.fromRGB(30, 30, 36)
+	look.HeadColor, look.LeftArmColor, look.RightArmColor = skin, skin, skin
+	look.TorsoColor, look.LeftLegColor, look.RightLegColor = jersey, shorts, shorts
+	local ok, model = pcall(Players.CreateHumanoidModelFromDescription, Players, look, Enum.HumanoidRigType.R15)
+	if not ok then
+		warn(`couldn't make the practice bot: {model}`)
+		return
+	end
+	model.Name = "Practice Bot"
+	model:SetAttribute("Id", BOT_ID) -- clients find the bot's body from the ball's Holder id
+	local hum = model:FindFirstChildOfClass("Humanoid")
+	hum.DisplayName = "Practice Bot"
+	model:PivotTo(CFrame.lookAt(CHECK + Vector3.new(0, 0, -4), CHECK))
+	model.Parent = botsFolder
+	model.HumanoidRootPart:SetNetworkOwner(nil) -- the server moves it; don't hand it to a nearby player's machine
+	local attachment = model.HumanoidRootPart:FindFirstChild("RootAttachment") or new("Attachment", { Parent = model.HumanoidRootPart })
+	local bot = {
+		Character = model, UserId = BOT_ID, Name = "PracticeBot", DisplayName = "Practice Bot",
+		mind = {}, tracks = {}, seen = {}, queue = {}, dir = Vector3.zero, nextThink = 0,
+		align = new("AlignOrientation", { Mode = Enum.OrientationAlignmentMode.OneAttachment, Attachment0 = attachment, Responsiveness = 25, MaxTorque = 1e6, Enabled = false, Parent = model.HumanoidRootPart }),
+	}
+	table.insert(bots, bot)
+end
+
+local function removeBot(bot)
+	table.remove(bots, table.find(bots, bot))
+	for _, t in { shootStarts, nextSteal, reaching, nextBlock, blocking, points, wins } do
+		t[bot] = nil
+	end
+	bot.Character:Destroy()
+end
+
+local function botDash(bot, name, hand)
+	local d = Hoops.DASHES[name]
+	if not d then
+		return
+	end
+	task.delay(d[1], function()
+		local root = rootOf(bot)
+		if not root then
+			return
+		end
+		local cf = root.CFrame
+		local dir = if d[2] == "back" then -cf.LookVector elseif d[2] == "side" then cf.RightVector * (if hand == "Left" then -1 else 1) else cf.LookVector
+		local flatDir = Vector3.new(dir.X, 0, dir.Z).Unit * d[3]
+		local attachment = new("Attachment", { Parent = root })
+		new("LinearVelocity", { Attachment0 = attachment, RelativeTo = Enum.ActuatorRelativeTo.World, VelocityConstraintMode = Enum.VelocityConstraintMode.Plane, PrimaryTangentAxis = Vector3.xAxis, SecondaryTangentAxis = Vector3.zAxis, PlaneVelocity = Vector2.new(flatDir.X, flatDir.Z), MaxForce = 50000, Parent = root })
+		task.delay(d[4], function()
+			attachment:Destroy()
+		end)
+	end)
+end
+
+-- The bot's next buffered move starts the moment the current one ends (chaining, like a player's).
+local function botNextMove(bot, root)
+	local name = bot.queue[1]
+	if not name or workspace:GetServerTimeNow() < moveEndsAt() or bot.shooting then
+		return
+	end
+	table.remove(bot.queue, 1)
+	local hand = ball:GetAttribute("Hand")
+	if name == "SpinMove" and hand == "Left" then
+		name = "SpinEscape" -- SpinMove only has a right-hand animation
+	end
+	if act.move(bot, root, name) then
+		startPath(name, workspace:GetServerTimeNow())
+		botPlay(bot, name .. hand, Hoops.ANIMATIONS[Hoops.animationFor(name, hand)])
+		botDash(bot, name, hand)
+	end
+end
+
+local function botShoot(bot, root, finish, hold)
+	table.clear(bot.queue)
+	bot.shooting = true
+	local hand = ball:GetAttribute("Hand")
+	act.shootStart(bot, root, finish, workspace:GetServerTimeNow())
+	local shot = ball:GetAttribute("Move") -- the server may have turned it into a jump shot
+	local track = botPlay(bot, shot .. hand, Hoops.ANIMATIONS[Hoops.animationFor(shot, hand)])
+	local move = Hoops.MOVES[shot]
+	if shot == "JumpShot" and track then
+		task.delay(move.duration, function() -- hold the set point while "the meter fills"
+			if bot.shooting then
+				track:AdjustSpeed(0)
+			end
+		end)
+	elseif move and move.jumpAt then
+		task.delay(move.jumpAt, function()
+			local r = rootOf(bot)
+			if r and bot.shooting then
+				r.Parent.Humanoid.Jump = true
+			end
+		end)
+	end
+	task.delay(hold, function()
+		bot.shooting = false
+		if track then
+			track:AdjustSpeed(1)
+		end
+		local r = rootOf(bot)
+		if r then
+			act.shoot(bot, r, hold)
+		end
+	end)
+end
+
+-- Where the bot saw someone `reaction` seconds ago (it plays a beat behind, like a person).
+local function seenLate(bot, p, root)
+	local now = os.clock()
+	table.insert(bot.seen, { t = now, p = p, pos = root.Position, vel = root.AssemblyLinearVelocity })
+	while #bot.seen > 1 and (bot.seen[2].t <= now - Brain.SKILL.reaction or bot.seen[1].p ~= p) do
+		table.remove(bot.seen, 1)
+	end
+	return bot.seen[1]
+end
+
+local function botThink(bot, root)
+	local now = os.clock()
+	local serverNow = workspace:GetServerTimeNow()
+	local h = holder()
+	local oppRoot = nil -- the nearest other body on the court
+	for _, p in participants() do
+		local r = p ~= bot and rootOf(p)
+		if r and (not oppRoot or (r.Position - root.Position).Magnitude < (oppRoot.Position - root.Position).Magnitude) then
+			oppRoot = r
+		end
+	end
+	local me = { pos = root.Position, vel = root.AssemblyLinearVelocity }
+	local out
+	if h == bot then
+		if not bot.possessionAt then
+			bot.possessionAt = now
+		end
+		out = Brain.offense({
+			now = now, me = me, opp = oppRoot and { pos = oppRoot.Position, vel = oppRoot.AssemblyLinearVelocity },
+			hand = ball:GetAttribute("Hand"), busy = bot.shooting or #bot.queue > 0 or serverNow < moveEndsAt(),
+			possessionAge = now - bot.possessionAt, mind = bot.mind, rng = math.random,
+		})
+	else
+		bot.possessionAt = nil
+		table.clear(bot.queue)
+		local hRoot = h and rootOf(h)
+		if hRoot then
+			local seen = seenLate(bot, h, hRoot)
+			local shooting = ball:GetAttribute("GatherAt") ~= nil
+			out = Brain.defense({
+				now = now, me = me, opp = { pos = seen.pos, vel = seen.vel },
+				canReach = (hRoot.Position - root.Position).Magnitude <= Hoops.STEAL_RANGE and Hoops.reaches(root.CFrame, heldSpot(hRoot)),
+				shooting = shooting, shotKind = ball:GetAttribute("Move"), shotAge = serverNow - (ball:GetAttribute("MoveAt") or serverNow),
+				mind = bot.mind, rng = math.random,
+			})
+		else
+			out = Brain.chase({ me = me, ballPos = ball.Position, ballVel = ball.AssemblyLinearVelocity })
+		end
+	end
+	bot.dir, bot.sprint, bot.face = out.dir or Vector3.zero, out.sprint, out.face
+	if (out.stance or false) ~= (bot.stance or false) then
+		bot.stance = out.stance
+		act.stance(bot, root, out.stance)
+	end
+
+	local a = out.act
+	if not a then
+		return
+	elseif a.kind == "move" then
+		table.insert(bot.queue, a.name)
+		if a.chain then
+			table.insert(bot.queue, a.chain)
+		end
+	elseif a.kind == "shoot" then
+		botShoot(bot, root, a.finish, a.hold)
+	elseif a.kind == "steal" then
+		botPlay(bot, "StealSwipe", Hoops.ANIMATIONS.StealSwipe)
+		act.steal(bot, root)
+	elseif a.kind == "block" then
+		botPlay(bot, "Block", Hoops.ANIMATIONS.Block)
+		root.Parent.Humanoid.Jump = true
+		act.block(bot, root)
+	end
+end
+
+RunService.Heartbeat:Connect(function()
+	for _, bot in bots do
+		local root = rootOf(bot)
+		if not root then
+			continue
+		end
+		if root.Position.Y < Hoops.FLOOR_Y - 20 then
+			bot.Character:PivotTo(CFrame.new(CHECK)) -- fell off somehow: back on the court
+		end
+		if os.clock() >= bot.nextThink then
+			bot.nextThink = os.clock() + 0.1
+			botThink(bot, root)
+		end
+		botNextMove(bot, root)
+		-- move, like a player: face the basket with the ball (unless sprinting), face the ball in stance
+		local hum = root.Parent.Humanoid
+		hum.WalkSpeed = if bot.stance then Hoops.STANCE_SPEED elseif bot.sprint then Hoops.SPRINT_SPEED else Hoops.WALK_SPEED
+		hum:Move(if bot.shooting then Vector3.zero else bot.dir)
+		local flatFace = bot.face and Vector3.new(bot.face.X - root.Position.X, 0, bot.face.Z - root.Position.Z)
+		local facing = flatFace ~= nil and flatFace.Magnitude > 0.5
+		hum.AutoRotate = not facing
+		bot.align.Enabled = facing
+		if facing then
+			bot.align.CFrame = CFrame.lookAt(root.Position, root.Position + flatFace)
+		end
+		-- legs: Roblox's run and idle; stance overlays on top (once their animations are published)
+		local speed = Vector3.new(root.AssemblyLinearVelocity.X, 0, root.AssemblyLinearVelocity.Z).Magnitude
+		local run = botPlay(bot, "run", LOCOMOTION.run, 0.2, true)
+		local idle = botPlay(bot, "idle", LOCOMOTION.idle, 0.2, true)
+		if run and idle then
+			run:AdjustWeight(math.clamp(speed / 6, 0.01, 1))
+			run:AdjustSpeed(math.max(speed / 16, 0.1))
+			idle:AdjustWeight(math.clamp(1 - speed / 6, 0.01, 1))
+		end
+		local overlay = if holder() == bot then Hoops.animationFor("DribbleStance", ball:GetAttribute("Hand")) elseif bot.stance then "DefenseStance" else nil
+		if overlay ~= bot.overlay then
+			if bot.overlay and bot.tracks[bot.overlay] then
+				bot.tracks[bot.overlay]:Stop(0.2)
+			end
+			bot.overlay = overlay
+			if overlay then
+				botPlay(bot, overlay, Hoops.ANIMATIONS[overlay], 0.2, true)
 			end
 		end
 	end
@@ -466,28 +815,35 @@ for _, player in Players:GetPlayers() do -- Play Solo can add the player before 
 end
 
 Players.PlayerRemoving:Connect(function(player)
-	shootStarts[player] = nil
-	nextSteal[player] = nil
-	reaching[player] = nil
-	nextBlock[player] = nil
-	blocking[player] = nil
+	for _, t in { shootStarts, nextSteal, reaching, nextBlock, blocking, points, wins } do
+		t[player] = nil
+	end
 end)
 
--- Start a game once two players have spawned; stop if someone leaves mid-game.
+-- Every half second: the practice bot comes and goes (alone = a bot to play), games start once two are on the
+-- court, and stop if someone leaves mid-game.
 while task.wait(0.5) do
-	local players = Players:GetPlayers()
-	if #players < 2 then
+	local humans = Players:GetPlayers()
+	if #humans == 1 and #bots == 0 and rootOf(humans[1]) then
+		makeBot()
+	elseif #humans ~= 1 then
+		for i = #bots, 1, -1 do
+			removeBot(bots[i])
+		end
+	end
+	local on = participants()
+	if #on < 2 then
 		if inGame or os.clock() >= nextGameAt then -- let a winner's name show out its time
 			inGame = false
 			status.Value = "Waiting for an opponent..."
 		end
 	elseif not inGame and os.clock() >= nextGameAt then
 		local ready = true
-		for _, p in players do
+		for _, p in on do
 			ready = ready and rootOf(p) ~= nil
 		end
 		if ready then
-			startGame(players)
+			startGame(on)
 		end
 	end
 end

@@ -70,8 +70,8 @@ local function flash(label, text, color, seconds) -- show a label briefly with a
 		end
 	end)
 end
-ReplicatedStorage:WaitForChild("Scored").OnClientEvent:Connect(function(scorer, points)
-	flash(popup, if scorer == me then `+{points}  BUCKET!` else `{scorer.DisplayName} +{points}`, popup.TextColor3, 1.5)
+ReplicatedStorage:WaitForChild("Scored").OnClientEvent:Connect(function(scorerId, scorerName, points)
+	flash(popup, if scorerId == me.UserId then `+{points}  BUCKET!` else `{scorerName} +{points}`, popup.TextColor3, 1.5)
 end)
 gui.Parent = me:WaitForChild("PlayerGui")
 
@@ -105,6 +105,20 @@ local myBlockAt = 0
 local shootStart = nil -- os.clock() when I started holding shoot (for the meter)
 local sprinting, l2Held, inStance = false, false, false
 
+local bots = workspace:WaitForChild("Bots")
+local function bodyOf(id) -- the character of whoever has this id: a player, or the practice bot
+	local player = id and Players:GetPlayerByUserId(id)
+	if player then
+		return player.Character
+	end
+	for _, model in bots:GetChildren() do
+		if id and model:GetAttribute("Id") == id then
+			return model
+		end
+	end
+	return nil
+end
+
 local function iHaveBall()
 	return ball:GetAttribute("Holder") == me.UserId
 end
@@ -120,29 +134,9 @@ ball:GetAttributeChangedSignal("Holder"):Connect(function()
 end)
 
 -- Animations --------------------------------------------------------------------------------------
--- Published by the game's owner; Roblox shows animations I play on my own character to everyone.
--- Dribble moves, stances, Layup and Dunk are authored from the right hand; "_L" is the left-hand mirror.
-local ANIMATIONS = {
-	BehindBack = 97720416461332, BehindBack_L = 110947973652762,
-	BetweenLegs = 119329621765672, BetweenLegs_L = 84879209746710,
-	Block = 122226333881077,
-	Crossover = 95030049810426, Crossover_L = 89350225332049,
-	DefenseStance = nil, -- shortcut: new animations, no IDs until they're published; they just don't play until then
-	DoubleTween = 90668950670519, DoubleTween_L = 109728765164717,
-	DribbleStance = nil, DribbleStance_L = nil,
-	Dunk = 116371417778801, Dunk_L = 93055928232785, DunkTwoHand = 86215529812622,
-	Hesitation = 115297373334157, Hesitation_L = 127581419750676,
-	InAndOut = 125228112161422, InAndOut_L = 82658335277698,
-	JumpShot = 84279351689285,
-	Layup = 93244724633892, Layup_L = 79293506735548,
-	SideStep = 88825168648212, SideStep_L = 134410382844275,
-	SideStepEscape = 123156882174859, SideStepEscape_L = 90507189105160,
-	SpinEscape = 134644387886968, SpinEscape_L = 71163240371728,
-	SpinMove = 128724466317154,
-	StealSwipe = 140227535096778,
-	Stepback = 106350331428838, Stepback_L = 100781301809205,
-	StepbackEscape = 113030727017982, StepbackEscape_L = 130891165327063,
-}
+-- IDs are in Hoops.ANIMATIONS (the server plays them on the practice bot too). Roblox shows animations I play
+-- on my own character to everyone.
+local ANIMATIONS = Hoops.ANIMATIONS
 
 local tracks = {} -- [name] = AnimationTrack on my current character
 local stanceTrack = nil -- the looping stance overlay playing now (DribbleStance / DefenseStance)
@@ -191,12 +185,21 @@ RunService.RenderStepped:Connect(function()
 		end
 	end
 
-	local id = ball:GetAttribute("Holder")
-	local holder = id and Players:GetPlayerByUserId(id)
-	local holderRoot = holder and holder.Character and holder.Character:FindFirstChild("HumanoidRootPart")
+	local holderId = ball:GetAttribute("Holder")
+	local holderBody = bodyOf(holderId)
+	local holderRoot = holderBody and holderBody:FindFirstChild("HumanoidRootPart")
+	local bodies = {} -- every character on the court with its id: players and the practice bot
 	for _, player in Players:GetPlayers() do
-		local char = player.Character
-		local root = char and char:FindFirstChild("HumanoidRootPart")
+		if player.Character then
+			table.insert(bodies, { player.Character, player.UserId })
+		end
+	end
+	for _, model in bots:GetChildren() do
+		table.insert(bodies, { model, model:GetAttribute("Id") })
+	end
+	for _, body in bodies do
+		local char, id = body[1], body[2]
+		local root = char:FindFirstChild("HumanoidRootPart")
 		if not root then
 			continue
 		end
@@ -204,8 +207,8 @@ RunService.RenderStepped:Connect(function()
 
 		-- Ball: the same function the server judges steals and blocks with, on the shared server clock.
 		local pos, ballSide, hold
-		if player == holder then
-			local mine = player == me
+		if id == holderId then
+			local mine = id == me.UserId
 			local hand = (if mine then myHand else ball:GetAttribute("Hand")) or "Right"
 			local move = if mine then myMove else ball:GetAttribute("Move")
 			local moveHand = if mine then myMoveHand else ball:GetAttribute("MoveHand")
@@ -215,7 +218,7 @@ RunService.RenderStepped:Connect(function()
 		end
 
 		-- Block: arms snap straight up, hold, and come down over BLOCK_TIME (the jump does the rest).
-		local blockAt = (if player == me then myBlockAt else char:GetAttribute("BlockAt")) or 0
+		local blockAt = (if id == me.UserId then myBlockAt else char:GetAttribute("BlockAt")) or 0
 		local b = (now - blockAt) / Hoops.BLOCK_TIME
 		local up = if b >= 0 and b < 1 then math.min(1, 4 * b, 4 * (1 - b)) else 0
 
@@ -250,7 +253,7 @@ RunService.RenderStepped:Connect(function()
 	if not hum then
 		return
 	end
-	local stance = l2Held and not iHaveBall() and holderRoot ~= nil and holder ~= me
+	local stance = l2Held and not iHaveBall() and holderRoot ~= nil
 	if stance ~= inStance then
 		inStance = stance
 		action:FireServer("stance", stance) -- intense D contests shots from further away
@@ -308,16 +311,6 @@ RunService:BindToRenderStep("ParkCamera", Enum.RenderPriority.Camera.Value + 1, 
 end)
 
 -- Moves -------------------------------------------------------------------------------------------
--- Bursts of movement for stepbacks, side-steps and spins: { delay, direction, speed, seconds }.
-local DASHES = {
-	Stepback = { 0.12, "back", 18, 0.3 },
-	StepbackEscape = { 0.1, "back", 20, 0.55 },
-	SideStep = { 0.12, "side", 18, 0.3 },
-	SideStepEscape = { 0.1, "side", 24, 0.35 },
-	SpinMove = { 0.05, "forward", 16, 0.45 },
-	SpinEscape = { 0.05, "forward", 20, 0.45 },
-}
-
 local function dash(direction, speed, duration) -- my character's physics are mine, so it's instant
 	local root = myRoot()
 	if not root then
@@ -350,8 +343,8 @@ local function begin(name, at)
 	myMove, myMoveHand, myMoveAt = name, hand, at
 	myHand = if Hoops.MOVES[name].switch then (if hand == "Right" then "Left" else "Right") else hand
 	action:FireServer("move", name, at) -- send the start time so the server's ball matches mine
-	play(if name == "SpinMove" then name elseif hand == "Left" then name .. "_L" else name)
-	local d = DASHES[name]
+	play(Hoops.animationFor(name, hand))
+	local d = Hoops.DASHES[name]
 	if d then
 		task.delay(d[1], function()
 			local root = myRoot()
@@ -531,6 +524,13 @@ for _, key in KEYS do
 		end
 	end, key[2] == "Crossover", key[1]) -- mobile gets a Cross button
 end
+
+-- Defense drill: the practice bot gets the ball at the top of the key (P, or D-pad up).
+ContextActionService:BindAction("Drill", function(_, state)
+	if state == Enum.UserInputState.Begin then
+		action:FireServer("drill")
+	end
+end, false, Enum.KeyCode.P, Enum.KeyCode.DPadUp)
 
 ContextActionService:SetTitle("ShootOrSteal", "Shoot")
 ContextActionService:SetTitle("KeyCrossover", "Cross")
