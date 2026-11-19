@@ -236,7 +236,7 @@ RunService.RenderStepped:Connect(function()
 	local height = math.max(ball.Position.Y - Hoops.FLOOR_Y - Hoops.BALL_RADIUS, 0)
 	shadow.Size = Vector3.new(0.02, 1.1 + height * 0.12, 1.1 + height * 0.12)
 	shadow.Transparency = math.clamp(0.45 + height * 0.06, 0.45, 0.95)
-	shadow.CFrame = CFrame.new(ball.Position.X, Hoops.FLOOR_Y + 0.04, ball.Position.Z) * CFrame.Angles(0, 0, math.rad(90)) -- lie flat
+	shadow.CFrame = CFrame.new(ball.Position.X, Hoops.FLOOR_Y + 0.16, ball.Position.Z) * CFrame.Angles(0, 0, math.rad(90)) -- lie flat, above the floor lines
 	local myRootPart = myRoot()
 	shotBar.Adornee, staminaBar.Adornee = myRootPart, myRootPart
 	if shootStart then
@@ -334,7 +334,7 @@ RunService.RenderStepped:Connect(function()
 	if not hum then
 		return
 	end
-	indicator:PivotTo(CFrame.new(root.Position.X, Hoops.FLOOR_Y + 0.05, root.Position.Z))
+	indicator:PivotTo(CFrame.new(root.Position.X, Hoops.FLOOR_Y + 0.22, root.Position.Z)) -- above the lines and the ball shadow
 	local ringColor = if iHaveBall() then Color3.fromRGB(255, 150, 40) else Color3.fromRGB(70, 160, 255)
 	for _, piece in indicator:GetChildren() do
 		piece.Color = ringColor

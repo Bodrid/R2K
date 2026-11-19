@@ -42,7 +42,7 @@ end
 -- three-point arc sits exactly THREE_DIST from the rim, the distance scoring uses.
 local wood, paint, apron = Color3.fromRGB(205, 160, 105), Color3.fromRGB(28, 60, 140), Color3.fromRGB(30, 34, 48)
 local white, orange, black = Color3.new(1, 1, 1), Color3.fromRGB(255, 110, 20), Color3.fromRGB(15, 15, 18)
-local LINE_Y = Hoops.FLOOR_Y + 0.03
+local LINE_Y = Hoops.FLOOR_Y + 0.1 -- floor layers sit >= 0.05 apart, so no two faces fight (flicker) at a distance
 local BASELINE, HALF, SIDE_X = Hoops.BASELINE_Z, Hoops.HALF_Z, Hoops.COURT_X
 local FT_Z, LANE = RIM.Z + 10.5, 6.75 -- free-throw line; half the lane's width
 local arena = new("Folder", { Name = "Arena", Parent = workspace })
@@ -75,11 +75,12 @@ local function sign(text, size, cf, color, face) -- big text painted on a surfac
 end
 
 -- floor: the court on a dark apron, a team-color border band, the paint, a wordmark
-part({ Name = "Apron", Size = Vector3.new(96, 1, 86), Position = Vector3.new(0, Hoops.FLOOR_Y - 0.52, -5), Color = apron, Material = Enum.Material.SmoothPlastic })
+-- Layers, bottom up: apron (top 0.2 under the floor), border band (0.1 under), court (the floor), paint, lines.
+part({ Name = "Apron", Size = Vector3.new(96, 1, 86), Position = Vector3.new(0, Hoops.FLOOR_Y - 0.7, -5), Color = apron, Material = Enum.Material.SmoothPlastic })
 part({ Name = "Court", Size = Vector3.new(SIDE_X * 2, 1, HALF - BASELINE), Position = Vector3.new(0, Hoops.FLOOR_Y - 0.5, (HALF + BASELINE) / 2), Color = wood, Material = Enum.Material.WoodPlanks })
-decal("Border", Vector3.new(SIDE_X * 2 + 6, 0.02, HALF - BASELINE + 6), CFrame.new(0, Hoops.FLOOR_Y - 0.01, (HALF + BASELINE) / 2), paint)
-decal("Paint", Vector3.new(LANE * 2, 0.02, FT_Z - BASELINE), CFrame.new(0, Hoops.FLOOR_Y + 0.01, (FT_Z + BASELINE) / 2), paint)
-sign("R2K", Vector3.new(18, 0.05, 7), CFrame.new(0, Hoops.FLOOR_Y + 0.02, HALF - 7), Color3.fromRGB(150, 105, 60))
+part({ Name = "Border", Size = Vector3.new(SIDE_X * 2 + 6, 1, HALF - BASELINE + 6), Position = Vector3.new(0, Hoops.FLOOR_Y - 0.6, (HALF + BASELINE) / 2), Color = paint, Material = Enum.Material.SmoothPlastic })
+decal("Paint", Vector3.new(LANE * 2, 0.02, FT_Z - BASELINE), CFrame.new(0, Hoops.FLOOR_Y + 0.04, (FT_Z + BASELINE) / 2), paint)
+sign("R2K", Vector3.new(18, 0.05, 7), CFrame.new(0, Hoops.FLOOR_Y + 0.05, HALF - 7), Color3.fromRGB(150, 105, 60))
 line(-SIDE_X, BASELINE, SIDE_X, BASELINE) -- baseline
 line(-SIDE_X, HALF, SIDE_X, HALF) -- half court
 line(-SIDE_X, BASELINE, -SIDE_X, HALF) -- sidelines
