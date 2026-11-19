@@ -30,12 +30,55 @@ local function rot(x, y, z)
 	return CFrame.Angles(math.rad(x), math.rad(y or 0), math.rad(z or 0))
 end
 
--- Lower the hips by `drop` and bend both legs so the feet stay on the floor (R15 leg segments ~1.2 studs).
+-- Legs, measured from the real rig (tools/preview/r15-rig.json, dumped from Studio): thigh and shin as
+-- 2D vectors in the side view (forward, down), with their rest angles, so knees are solved exactly.
+local serde = require("@lune/serde")
+local RIG = serde.decode("json", fs.readFile("tools/preview/r15-rig.json"))
+local JOINT = {}
+for _, j in RIG.joints do
+	JOINT[j.name] = j
+end
+local function segment(from, to) -- attachment offsets {x,y,z,...} -> length, rest angle (+ forward of straight down)
+	local fwd, down = -(to[3] - from[3]), -(to[2] - from[2])
+	return math.sqrt(fwd * fwd + down * down), math.atan2(fwd, down)
+end
+local THIGH, THIGH_REST = segment(JOINT.LeftUpperLeg.c1, JOINT.LeftLowerLeg.c0)
+local SHIN, SHIN_REST = segment(JOINT.LeftLowerLeg.c1, JOINT.LeftFoot.c0)
+local HIP_TO_ANKLE = THIGH * math.cos(THIGH_REST) + SHIN * math.cos(SHIN_REST) -- standing
+local REST_FOOT = THIGH * math.sin(THIGH_REST) + SHIN * math.sin(SHIN_REST) -- ankle ahead of the hip, standing
+-- Poses below were authored for a 2.4-stud leg; drops, foot spacing and hops scale with the real leg.
+local LEG_SCALE = HIP_TO_ANKLE / 2.4
+
+-- One leg with its foot flat on the floor, ankle `foot` studs ahead of the hip (- behind), hips `drop`
+-- below standing (both already scaled). Two-bone IK with the knee bending forward.
+local function plantedLeg(p, side, foot, drop, out)
+	local f, h = foot, HIP_TO_ANKLE - drop
+	local reach = math.clamp(math.sqrt(f * f + h * h), math.abs(THIGH - SHIN) + 1e-4, THIGH + SHIN - 1e-4)
+	local thigh = math.atan2(f, h) + math.acos((THIGH * THIGH + reach * reach - SHIN * SHIN) / (2 * THIGH * reach))
+	local shin = math.atan2(f - THIGH * math.sin(thigh), h - THIGH * math.cos(thigh))
+	local hipTurn, kneeTurn = thigh - THIGH_REST, (shin - SHIN_REST) - (thigh - THIGH_REST)
+	if math.sqrt(f * f + h * h) < THIGH + SHIN - 1e-3 then -- self-check: the ankle lands where it was placed
+		local endF, endH = THIGH * math.sin(thigh) + SHIN * math.sin(shin), THIGH * math.cos(thigh) + SHIN * math.cos(shin)
+		assert(math.abs(endF - f) < 1e-6 and math.abs(endH - h) < 1e-6, "leg IK missed the foot")
+	end
+	p[side .. "UpperLeg"] = CFrame.Angles(hipTurn, 0, math.rad(out or 0))
+	p[side .. "LowerLeg"] = CFrame.Angles(kneeTurn, 0, 0)
+	p[side .. "Foot"] = CFrame.Angles(-(hipTurn + kneeTurn), 0, 0) -- foot stays flat
+end
+do -- standing still must be the rest pose exactly
+	local p = {}
+	plantedLeg(p, "Left", REST_FOOT, 0)
+	for _, part in { "LeftUpperLeg", "LeftLowerLeg", "LeftFoot" } do
+		assert(select(1, p[part]:ToEulerAnglesXYZ()) ^ 2 < 1e-10, "rest pose isn't identity: " .. part)
+	end
+end
+
+-- Lower the hips by `drop` (authored studs, scaled to the real leg) with both feet planted under the hips.
 local function crouch(drop, poses)
-	local hip = math.deg(math.acos(1 - drop / 2.4))
+	drop *= LEG_SCALE
 	poses.LowerTorso = (poses.LowerTorso or CFrame.new()) * CFrame.new(0, -drop, 0)
 	for _, side in { "Right", "Left" } do
-		poses[side .. "UpperLeg"], poses[side .. "LowerLeg"], poses[side .. "Foot"] = rot(hip), rot(-2 * hip), rot(hip)
+		plantedLeg(poses, side, REST_FOOT, drop)
 	end
 	return poses
 end
@@ -117,10 +160,10 @@ build("JumpShot", {
 build("Block", {
 	{ 0, {} },
 	{ 0.1, crouch(0.4, { RightUpperArm = rot(60), LeftUpperArm = rot(60) }) }, -- load up
-	{ 0.25, { -- arms straight up, slight lean back
-		UpperTorso = rot(10),
-		RightUpperArm = rot(172),
-		LeftUpperArm = rot(172),
+	{ 0.25, { -- arms up and slightly forward, toward the shooter
+		UpperTorso = rot(-5),
+		RightUpperArm = rot(160),
+		LeftUpperArm = rot(160),
 	} },
 	{ 0.5, {} },
 })
@@ -161,25 +204,6 @@ build("SpinMove", {
 -- stepback), and the ball follows the hand in code.
 ----------------------------------------------------------------------------------------------------
 
-local SEGMENT = 1.2 -- R15 thigh and shin length
-
--- One leg with its foot flat on the floor `foot` studs ahead of the hips (- behind), hips `drop` below
--- standing height. Two-bone IK: the hip and knee angles are solved so the foot lands exactly there,
--- with the knee bending forward.
-local function plantedLeg(p, side, foot, drop, out)
-	local h = 2 * SEGMENT - drop
-	local reach = math.min(math.sqrt(foot * foot + h * h), 2 * SEGMENT - 1e-4) -- too far just straightens the leg
-	local line = math.atan2(foot, h) -- from straight down toward the foot
-	local bend = math.acos(reach / (2 * SEGMENT))
-	local thigh, shin = line + bend, line - bend
-	if reach < 2 * SEGMENT - 1e-3 then -- self-check: the foot really lands where it was placed
-		assert(math.abs(SEGMENT * (math.sin(thigh) + math.sin(shin)) - foot) < 1e-6 and math.abs(SEGMENT * (math.cos(thigh) + math.cos(shin)) - h) < 1e-6, "leg IK missed the foot")
-	end
-	p[side .. "UpperLeg"] = CFrame.Angles(thigh, 0, math.rad(out or 0))
-	p[side .. "LowerLeg"] = CFrame.Angles(shin - thigh, 0, 0)
-	p[side .. "Foot"] = CFrame.Angles(-shin, 0, 0)
-end
-
 -- One leg tucked up in the air (hops): `foot` is where it would land (studs, as above) turned into a
 -- thigh swing; knee bent by `tuck`, foot roughly level.
 local function airLeg(p, side, foot, tuck, out)
@@ -206,14 +230,14 @@ end
 --   R/L: arm poses. The head counters the torso so the eyes stay on the defender.
 local function body(o)
 	local p = {}
-	local drop = o.drop or 0
-	p.LowerTorso = CFrame.new(0, if o.air then o.air else -drop, 0) * rot(0, o.hipTurn or 0, 0)
+	local drop = (o.drop or 0) * LEG_SCALE
+	p.LowerTorso = CFrame.new(0, if o.air then o.air * LEG_SCALE else -drop, 0) * rot(0, o.hipTurn or 0, 0)
 	for _, side in { "Left", "Right" } do
 		local foot, out = o[side:lower()] or 0, o[side:lower() .. "Out"]
 		if o.air then
 			airLeg(p, side, foot, o[side:lower() .. "Tuck"] or o.tuck or 30, out)
 		else
-			plantedLeg(p, side, foot, drop, out)
+			plantedLeg(p, side, foot * LEG_SCALE, drop, out)
 		end
 	end
 	local lean, twist, tilt = o.lean or 0, o.twist or 0, o.tilt or 0
@@ -304,7 +328,7 @@ both("DoubleTween", frames({ -- between the legs and straight back
 both("BehindBack", frames({
 	{ 0, READY },
 	{ 0.12, { drop = 0.5, left = 0.5, right = -0.4, lean = -14, twist = -15, R = { -30, 0, 15, 40 }, L = GUARD_L } }, -- pull the ball back
-	{ 0.26, { drop = 0.55, left = 0.53, right = -0.4, lean = -16, twist = 10, R = { -45, 0, -25, 75 }, L = { -25, 0, -25, 30 } } }, -- wrap behind the hips
+	{ 0.26, { drop = 0.55, left = 0.53, right = -0.4, lean = -16, twist = 10, R = { -50, 0, -35, 20 }, L = { -25, 0, -25, 30 } } }, -- wrap behind the hips (elbow nearly straight so the hand really goes behind)
 	{ 0.4, { drop = 0.52, left = 0.5, right = -0.4, lean = -18, twist = 12, R = GUARD_R, L = BALL_L } },
 	{ 0.55, READY_LEFT_HAND },
 }))

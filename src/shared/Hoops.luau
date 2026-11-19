@@ -20,12 +20,12 @@ local Hoops = {
 	DRIBBLE_HZ = 2, -- bounces per second
 
 	-- Ball path, relative to the holder's HumanoidRootPart
-	DRIBBLE_SIDE = 1.5, -- how far out to the side the ball bounces
-	DRIBBLE_FORWARD = 1.2,
-	DRIBBLE_TOP = -0.6, -- top of the bounce (ball center), below the root
-	HAND_LOW = -0.8, -- the dribble hand follows the ball down to here, then waits
-	GATHER_HEIGHT = 3.2, -- where the ball sits during the shot windup; the shot launches from here
-	GATHER_FORWARD = 1.2, -- in front of the face, in reach of R15 arms
+	DRIBBLE_SIDE = 1.255, -- how far out to the side the ball bounces
+	DRIBBLE_FORWARD = 0.797,
+	DRIBBLE_TOP = -1.422, -- top of the bounce (ball center), below the root
+	HAND_LOW = -0.973, -- the dribble hand follows the ball down to here, then waits
+	GATHER_HEIGHT = 1.131, -- where the ball sits during the shot windup; the shot launches from here
+	GATHER_FORWARD = 1.22, -- in front of the face, in reach of R15 arms
 	GATHER_TIME = 0.2, -- seconds to bring the ball up into the shot
 
 	PERFECT_HOLD = 0.6, -- hold shoot this long for a perfect release
@@ -39,13 +39,16 @@ local Hoops = {
 	CONTEST_RANGE = 6,
 	STEAL_RANGE = 6, -- steal only does anything this close to the handler
 	STEAL_REACH = 2, -- how close the defender's hands must get; small enough that the body shields the far side
+	STEAL_UP = 0.018, -- where the reaching hand is at full stretch, from the defender's root
+	STEAL_FORWARD = 1.877,
 	REACH_TIME = 0.15, -- how long a reach stays live; short, so bounce timing matters
 	STEAL_COOLDOWN = 1,
 	MAX_BACKDATE = 0.25, -- how far back the server accepts a dribble move's start time (covers ping)
 	POKE_SPEED = 14, -- how hard a steal knocks the ball loose
 	BLOCK_RANGE = 8, -- block only does anything this close to the ball handler (or a shooter, ball in the air)
 	BLOCK_REACH = 1.5, -- how close the raised hands must get to the ball; small, so you have to be in their face
-	BLOCK_HEIGHT = 3.6, -- raised hands, above the root (the jump adds to it)
+	BLOCK_HEIGHT = 1.791, -- raised hands, above the root (the jump adds to it)
+	BLOCK_FORWARD = 0.69,
 	BLOCK_TIME = 0.5, -- block animation length, about one jump; the ball is live for contact this long
 	BLOCK_COOLDOWN = 1.2,
 	SWAT_SPEED = 25, -- how hard a block knocks the ball away
@@ -87,129 +90,136 @@ local function sideOf(hand)
 	return hand == "Left" and -1 or 1
 end
 
--- Dribble moves: the ball's path, in the holder's body space, as { time, right, up, forward } keyframes.
--- Authored from the right hand; from the left hand the path is mirrored (right negated). Each path starts
--- at the top of the right-hand bounce and ends at the top of the bounce on the side it finishes, so the
--- dribble picks up seamlessly. Times match the move's animation (tests check it). up = "floor" is a bounce.
+-- Dribble moves: the ball's path, in the holder's body space, as { time, right, up, forward, hand } keyframes.
+-- hand: "R" or "L" (that hand has it), "both" (held in two hands), nil (in the air between hands), or "legs"
+-- (bouncing between the feet). up = "floor" is a bounce. Authored from the right hand; from the left hand the
+-- path is mirrored. Each path starts and ends at the top of the dribble, so moves join it seamlessly.
+-- Positions are measured from the animations by tools/preview/fit.luau, which rewrites this block; edit
+-- timing and hands here, then re-run it.
 local S, T, F = Hoops.DRIBBLE_SIDE, Hoops.DRIBBLE_TOP, Hoops.DRIBBLE_FORWARD
-local CHEST = 0.6 -- ball held at the chest (two hands), above the root
-
-local function scaled(path, factor)
-	local out = {}
-	for i, k in path do
-		out[i] = { k[1] * factor, k[2], k[3], k[4] }
-	end
-	return out
-end
-
--- Spins: the ball, pulled in tight, turns with the body. keys = { time, degrees turned (clockwise) } from the animation.
-local function spinPath(keys)
-	local function turnAt(t)
-		for i = 2, #keys do
-			if t <= keys[i][1] then
-				return keys[i - 1][2] + (keys[i][2] - keys[i - 1][2]) * (t - keys[i - 1][1]) / (keys[i][1] - keys[i - 1][1])
-			end
-		end
-		return keys[#keys][2]
-	end
-	local path = { { 0, S, T, F } }
-	local t0, t1 = keys[2][1], keys[#keys - 1][1]
-	for i = 0, 6 do
-		local t = t0 + (t1 - t0) * i / 6
-		local a = math.rad(turnAt(t))
-		local r, f = 0.7, 0.8 -- tucked at the right hip, slightly in front
-		table.insert(path, { t, r * math.cos(a) + f * math.sin(a), -0.1, -r * math.sin(a) + f * math.cos(a) })
-	end
-	table.insert(path, { keys[#keys][1], S, T, F })
-	return path
-end
-
-local STEPBACK = { -- pound it on the plant, carry it up through the hop, land gathered at the chest
-	{ 0, S, T, F },
-	{ 0.1, S, "floor", 1.4 },
-	{ 0.22, 0.6, 0, 0.9 },
-	{ 0.42, 0, CHEST, 0.9 },
-	{ 0.6, 0, CHEST, 0.9 },
-	{ 0.7, S, T, F },
-}
-local SIDESTEP = {
-	{ 0, S, T, F },
-	{ 0.1, 1.6, "floor", 1.3 },
-	{ 0.26, 0.5, 0.3, 0.9 },
-	{ 0.42, 0, CHEST, 0.9 },
-	{ 0.52, 0, CHEST, 0.9 },
-	{ 0.6, S, T, F },
-}
-
+-- BEGIN FITTED MOVES
 Hoops.MOVES = {
-	Crossover = { switch = true, path = { -- one low bounce across the front
-		{ 0, S, T, F },
-		{ 0.12, 1.3, -0.9, 1.3 },
-		{ 0.25, 0, "floor", 1.5 },
-		{ 0.38, -1.3, -0.8, 1.3 },
-		{ 0.5, -S, T, F },
+	BehindBack = { switch = true, path = {
+		{ 0, S, T, F, "R" },
+		{ 0.12, 1.194, -1.428, -0.363, "R" },
+		{ 0.26, 0.29, -1.248, -0.698, "R" },
+		{ 0.38, -0.349, "floor", -0.079 },
+		{ 0.55, -S, T, F, "L" },
 	} },
-	BetweenLegs = { switch = true, path = { -- bounce through the gap under the front (left) leg, caught behind it
-		{ 0, S, T, F },
-		{ 0.12, 1, -1.2, 0.8 },
-		{ 0.26, -0.2, "floor", 0.4 },
-		{ 0.4, -1.4, -1, 0.6 },
-		{ 0.55, -S, T, F },
+	BetweenLegs = { switch = true, path = {
+		{ 0, S, T, F, "R" },
+		{ 0.12, 0.696, -1.957, 0.372, "R" },
+		{ 0.26, 0, "floor", 0.364, "legs" },
+		{ 0.4, -1.328, -1.503, 0.669, "L" },
+		{ 0.55, -S, T, F, "L" },
 	} },
-	DoubleTween = { switch = false, path = { -- through the legs and straight back
-		{ 0, S, T, F },
-		{ 0.12, 1, -1.2, 0.8 },
-		{ 0.26, -0.2, "floor", 0.4 },
-		{ 0.4, -1.4, -1, 0.6 },
-		{ 0.52, -1, -1.2, 0.8 },
-		{ 0.64, 0.2, "floor", 0.4 },
-		{ 0.76, 1.4, -1, 0.8 },
-		{ 0.85, S, T, F },
+	Crossover = { switch = true, path = {
+		{ 0, S, T, F, "R" },
+		{ 0.12, 1.032, -1.435, 0.954, "R" },
+		{ 0.25, -0.175, "floor", 0.751 },
+		{ 0.38, -1.382, -1.539, 0.549, "L" },
+		{ 0.5, -S, T, F, "L" },
 	} },
-	BehindBack = { switch = true, path = { -- pulled back past the hip, wrapped behind, bounced out on the left
-		{ 0, S, T, F },
-		{ 0.12, 1.5, -1, -0.2 },
-		{ 0.26, 0.2, -1.2, -1 },
-		{ 0.38, -1.2, "floor", 0.2 },
-		{ 0.55, -S, T, F },
+	DoubleTween = { switch = false, path = {
+		{ 0, S, T, F, "R" },
+		{ 0.12, 0.696, -1.957, 0.372, "R" },
+		{ 0.26, 0, "floor", 0.364, "legs" },
+		{ 0.4, -1.328, -1.503, 0.669, "L" },
+		{ 0.52, -0.696, -1.97, 0.36, "L" },
+		{ 0.64, 0, "floor", 0.364, "legs" },
+		{ 0.76, 1.259, -1.662, 0.57, "R" },
+		{ 0.85, S, T, F, "R" },
 	} },
-	InAndOut = { switch = false, path = { -- pulled in like a crossover, snapped back out, pushed wide
-		{ 0, S, T, F },
-		{ 0.14, 0.4, -1, 1.3 },
-		{ 0.28, 1.6, -1.2, 1.2 },
-		{ 0.38, 1.7, "floor", 1.4 },
-		{ 0.5, S, T, F },
+	Hesitation = { switch = false, path = {
+		{ 0, S, T, F, "R" },
+		{ 0.15, 1.144, -0.364, 0.908, "R" },
+		{ 0.32, 1.152, -0.47, 0.942, "R" },
+		{ 0.45, 1.2, "floor", 0.875 },
+		{ 0.6, S, T, F, "R" },
 	} },
-	Hesitation = { switch = false, path = { -- carried high while the body rises, then pounded forward on the burst
-		{ 0, S, T, F },
-		{ 0.15, 1.5, -0.2, 1 },
-		{ 0.32, 1.5, -0.1, 1 },
-		{ 0.45, 1.6, "floor", 1.6 },
-		{ 0.6, S, T, F },
+	InAndOut = { switch = false, path = {
+		{ 0, S, T, F, "R" },
+		{ 0.14, -0.001, -1.241, 1.148, "R" },
+		{ 0.28, 1.628, -1.284, 0.434, "R" },
+		{ 0.38, 1.459, "floor", 0.599 },
+		{ 0.5, S, T, F, "R" },
 	} },
-	Stepback = { switch = false, path = STEPBACK },
-	StepbackEscape = { switch = false, path = { -- two hops: pound, carry, pound, carry up, land gathered
-		{ 0, S, T, F },
-		{ 0.09, S, "floor", 1.4 },
-		{ 0.22, 1.4, -0.8, 1 },
-		{ 0.34, S, "floor", 1.2 },
-		{ 0.46, 0.6, 0.2, 0.9 },
-		{ 0.58, 0, CHEST, 0.9 },
-		{ 0.7, 0, CHEST, 0.9 },
-		{ 0.8, S, T, F },
+	SideStep = { switch = false, path = {
+		{ 0, S, T, F, "R" },
+		{ 0.1, 1.202, "floor", 0.892 },
+		{ 0.26, 1.118, -0.094, 1.043, "R" },
+		{ 0.42, 0.093, 0.302, 0.898, "both" },
+		{ 0.52, 0.039, 0.377, 0.873, "both" },
+		{ 0.6, S, T, F, "R" },
 	} },
-	SideStep = { switch = false, path = SIDESTEP },
-	SideStepEscape = { switch = false, path = scaled(SIDESTEP, 1 / 1.3) }, -- same move, 1.3x faster
-	SpinMove = { switch = false, path = spinPath({ { 0, 0 }, { 0.15, 90 }, { 0.3, 180 }, { 0.45, 270 }, { 0.6, 360 } }) },
-	SpinEscape = { switch = false, path = spinPath({ { 0, 0 }, { 0.1, 60 }, { 0.22, 150 }, { 0.34, 240 }, { 0.44, 330 }, { 0.55, 360 } }) },
+	SideStepEscape = { switch = false, path = {
+		{ 0, S, T, F, "R" },
+		{ 0.077, 1.202, "floor", 0.892 },
+		{ 0.2, 1.118, -0.057, 1.043, "R" },
+		{ 0.323, 0.093, 0.228, 0.898, "both" },
+		{ 0.4, 0.039, 0.346, 0.873, "both" },
+		{ 0.462, S, T, F, "R" },
+	} },
+	SpinEscape = { switch = false, path = {
+		{ 0, S, T, F, "R" },
+		{ 0.1, 1.381, -0.45, -0.26, "R" },
+		{ 0.157, 0.859, -0.45, -1.112, "R" },
+		{ 0.213, -0.239, -0.45, -1.384, "R" },
+		{ 0.27, -0.985, -0.45, -1.001, "R" },
+		{ 0.327, -1.392, -0.45, 0.189, "R" },
+		{ 0.383, -0.971, -0.45, 1.016, "R" },
+		{ 0.44, 0.26, -0.45, 1.381, "R" },
+		{ 0.55, S, T, F, "R" },
+	} },
+	SpinMove = { switch = false, path = {
+		{ 0, S, T, F, "R" },
+		{ 0.15, 0.84, -0.106, -0.968, "R" },
+		{ 0.2, 0.388, -0.106, -1.222, "R" },
+		{ 0.25, -0.556, -0.106, -1.155, "R" },
+		{ 0.3, -0.968, -0.106, -0.84, "R" },
+		{ 0.35, -1.222, -0.106, -0.388, "R" },
+		{ 0.4, -1.155, -0.106, 0.556, "R" },
+		{ 0.45, -0.84, -0.106, 0.968, "R" },
+		{ 0.6, S, T, F, "R" },
+	} },
+	Stepback = { switch = false, path = {
+		{ 0, S, T, F, "R" },
+		{ 0.1, 1.142, "floor", 0.966 },
+		{ 0.22, 1.007, -0.402, 1.169, "R" },
+		{ 0.42, 0, 0.243, 0.899, "both" },
+		{ 0.6, 0, 0.383, 0.855, "both" },
+		{ 0.7, S, T, F, "R" },
+	} },
+	StepbackEscape = { switch = false, path = {
+		{ 0, S, T, F, "R" },
+		{ 0.09, 1.138, "floor", 0.897 },
+		{ 0.22, 0.968, 0.129, 1.041, "R" },
+		{ 0.34, 0.968, "floor", 1.041 },
+		{ 0.46, 0.968, 0.128, 1.041, "R" },
+		{ 0.58, 0, 0.179, 0.899, "both" },
+		{ 0.7, 0, 0.372, 0.855, "both" },
+		{ 0.8, S, T, F, "R" },
+	} },
 }
+-- END FITTED MOVES
+local HAND = { R = { 1, 0 }, L = { -1, 0 }, both = { 0, 1 } }
 for _, move in Hoops.MOVES do
 	move.duration = move.path[#move.path][1]
+	move.hands = {}
+	for i, k in move.path do
+		move.hands[i] = HAND[k[5]]
+	end
+	for i, k in move.path do
+		if not HAND[k[5]] then -- in the air: between the hands it left and the one it's going to
+			local before, after = move.hands[i - 1] or move.hands[i + 1], move.hands[i + 1] or move.hands[i - 1]
+			move.hands[i] = { (before[1] + after[1]) / 2, (before[2] + after[2]) / 2 }
+		end
+	end
 end
 
 -- The ball's spot on a move's path `t` seconds in (right-hand version). Falling to the floor speeds up and
 -- rising off it slows down, like a real bounce; everything else eases in and out.
-local function onPath(path, t, floorUp)
+local function onPath(path, hands, t, floorUp)
 	local function height(k)
 		return if k[3] == "floor" then floorUp else k[3]
 	end
@@ -220,7 +230,8 @@ local function onPath(path, t, floorUp)
 			local bounce = a[3] == "floor" or b[3] == "floor"
 			local across = if bounce then u else u * u * (3 - 2 * u)
 			local fall = if b[3] == "floor" then u * u elseif a[3] == "floor" then 1 - (1 - u) * (1 - u) else across
-			return lerp(a[2], b[2], across), lerp(height(a), height(b), fall), lerp(a[4], b[4], across)
+			local ha, hb = hands[i - 1], hands[i]
+			return lerp(a[2], b[2], across), lerp(height(a), height(b), fall), lerp(a[4], b[4], across), lerp(ha[1], hb[1], across), lerp(ha[2], hb[2], across)
 		end
 	end
 end
@@ -229,25 +240,26 @@ end
 -- and every client get the same answer: clients draw it, the server judges steals and blocks with it.
 --   hand: the hand it's in (after the current move), move/moveHand/moveAt: the dribble move under way,
 --   the hand it started from, and when (with no move, moveAt is when the dribble started)
--- Also returns the ball's sideways position (+ right) and the shot-gather progress (0..1), for the arms.
+-- Also returns, for the arms, which hand has it (+1 right, -1 left, between = in the air) and how much it's
+-- held in both hands (0..1: two-handed gathers and the shot windup).
 function Hoops.ballSpot(rootCFrame, hand, move, moveHand, moveAt, gatherAt, now)
 	local floorUp = Hoops.FLOOR_Y + Hoops.BALL_RADIUS - rootCFrame.Position.Y -- root stays upright, so its up is world up
 	local m = move and Hoops.MOVES[move]
-	local right, up, forward
+	local right, up, forward, side, hold
 	if m and now < moveAt + m.duration then
-		right, up, forward = onPath(m.path, now - moveAt, floorUp)
+		right, up, forward, side, hold = onPath(m.path, m.hands, now - moveAt, floorUp)
 		right *= sideOf(moveHand)
+		side *= sideOf(moveHand)
 	else
 		-- Dribbling: |cos| snaps the ball off the floor and lets it float near the hand; the first
 		-- bounce starts at the top right when the move (or possession) ends.
 		local since = now - moveAt - (if m then m.duration else 0)
 		local s = 1 - math.abs(math.cos(math.pi * Hoops.DRIBBLE_HZ * since))
-		right, up, forward = sideOf(hand) * S, lerp(T, floorUp, s), F
+		right, up, forward, side, hold = sideOf(hand) * S, lerp(T, floorUp, s), F, sideOf(hand), 0
 	end
 	local g = if gatherAt then math.clamp((now - gatherAt) / Hoops.GATHER_TIME, 0, 1) else 0
 	g = g * g * (3 - 2 * g) -- ease in and out
-	right = lerp(right, 0, g)
-	return offset(rootCFrame, right, lerp(up, Hoops.GATHER_HEIGHT, g), lerp(forward, Hoops.GATHER_FORWARD, g)), right, g
+	return offset(rootCFrame, lerp(right, 0, g), lerp(up, Hoops.GATHER_HEIGHT, g), lerp(forward, Hoops.GATHER_FORWARD, g)), side, math.max(hold, g)
 end
 
 -- Where the ball sits during a shot windup; shots launch from here.
@@ -255,14 +267,14 @@ function Hoops.gatherSpot(rootCFrame)
 	return offset(rootCFrame, 0, Hoops.GATHER_HEIGHT, Hoops.GATHER_FORWARD)
 end
 
--- Can the defender's hands (just in front of them) touch a ball at `spot`?
+-- Can the defender's reaching hand touch a ball at `spot`?
 function Hoops.reaches(defenderCFrame, spot)
-	return (spot - offset(defenderCFrame, 0, 0, 1.5)).Magnitude <= Hoops.STEAL_REACH
+	return (spot - offset(defenderCFrame, 0, Hoops.STEAL_UP, Hoops.STEAL_FORWARD)).Magnitude <= Hoops.STEAL_REACH
 end
 
 -- Between a blocker's raised hands. Clients draw the hands here; the server judges blocks from it.
 function Hoops.blockHands(blockerCFrame)
-	return offset(blockerCFrame, 0, Hoops.BLOCK_HEIGHT, 0.4)
+	return offset(blockerCFrame, 0, Hoops.BLOCK_HEIGHT, Hoops.BLOCK_FORWARD)
 end
 
 -- Can a blocker's raised hands touch a ball at `spot`?

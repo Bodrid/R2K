@@ -128,7 +128,7 @@ RunService.RenderStepped:Connect(function()
 		local cf = root.CFrame
 
 		-- Ball: the same function the server judges steals and blocks with, on the shared server clock.
-		local pos, ballRight, hold
+		local pos, ballSide, hold
 		if player == holder then
 			local mine = player == me
 			local hand = (if mine then myHand else ball:GetAttribute("Hand")) or "Right"
@@ -136,11 +136,8 @@ RunService.RenderStepped:Connect(function()
 			local moveHand = if mine then myMoveHand else ball:GetAttribute("MoveHand")
 			local moveAt = (if mine then myMoveAt else ball:GetAttribute("MoveAt")) or 0
 			local gatherAt = if mine then myGatherAt else ball:GetAttribute("GatherAt")
-			local g
-			pos, ballRight, g = Hoops.ballSpot(cf, hand, move, moveHand, moveAt, gatherAt, now)
+			pos, ballSide, hold = Hoops.ballSpot(cf, hand, move, moveHand, moveAt, gatherAt, now)
 			ball.CFrame = CFrame.new(pos)
-			-- Both hands take the ball once it's up at the chest (stepback gathers) or in a shot windup.
-			hold = math.max(g, math.clamp((pos.Y - cf.Position.Y) / 0.5, 0, 1))
 		end
 
 		-- Block: arms snap straight up, hold, and come down over BLOCK_TIME (the jump does the rest).
@@ -157,8 +154,8 @@ RunService.RenderStepped:Connect(function()
 				if up > 0 or not pos then
 					arm.target.WorldPosition = Hoops.blockHands(cf) + cf.RightVector * x * 0.6
 					arm.pole.WorldPosition = cf * Vector3.new(x * 3, 1.5, 0) -- elbows out to the sides
-				else -- the hand on the ball's side rides the top of each bounce wherever the move takes it
-					local dribble = math.clamp(0.5 + x * ballRight / (2 * Hoops.DRIBBLE_SIDE), 0, 1)
+				else -- the hand that has the ball rides the top of each bounce; both hold it in gathers and shots
+					local dribble = math.clamp(0.5 + 0.5 * x * ballSide, 0, 1)
 					local onTop = Vector3.new(pos.X, math.max(pos.Y + Hoops.BALL_RADIUS, handLow), pos.Z)
 					arm.target.WorldPosition = onTop:Lerp(pos + cf.RightVector * x * (Hoops.BALL_RADIUS + 0.2), hold)
 					arm.pole.WorldPosition = cf * Vector3.new(x * 3, -1, 1.5) -- elbows bend out and back

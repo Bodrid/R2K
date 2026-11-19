@@ -83,9 +83,18 @@ To polish one in Studio:
 
 Publish under the same account or group that owns the game. The game doesn't play these yet; send the IDs to wire them in.
 
+## Calibrating the game to the animations
+
+The game's ball spots are measured from the animations on the real rig (`tools/preview/r15-rig.json`), not guessed. That covers the dribble spot, every move's ball path, the shot windup, the block hands and the steal reach. After changing any animation:
+
+1. `lune run tools/placeholder-animations` regenerates the animation files. Leg lengths come from the rig, so feet stay planted.
+2. `lune run tools/preview/fit` measures the animated hands and rewrites those values in `src/shared/Hoops.luau`.
+3. `lune run tests/hoops.spec` checks that the gameplay rules still hold.
+4. Re-publish the changed animations in Studio with **Overwrite**, so their IDs stay the same.
+
 ## Previewing animations without Studio
 
-`lune run tools/preview/pose [Name ...]` poses an R15 rig through each animation, using the game's own ball paths. It prints how far the ball gets from the hands and whether the feet stay on the floor. Then `python3 tools/preview/render.py [Name ...]` (needs matplotlib) draws front, side and top filmstrips into `tools/preview/out/`.
+`lune run tools/preview/pose [Name ...]` poses an R15 rig through each animation, using the game's own ball paths. It prints how far the game's arm IK has to pull each hand to the ball while a hand holds it, and whether the feet stay on the floor. Then `python3 tools/preview/render.py [Name ...]` (needs matplotlib) draws front, side and top filmstrips into `tools/preview/out/`.
 
 The rig is a best guess unless `tools/preview/r15-rig.json` exists. To create it, run this in Studio's command bar with a Rig Builder R15 rig named `Rig` in the workspace (it reads both Motor6D joints and the newer AnimationConstraint joints), then save the printed line as that file:
 

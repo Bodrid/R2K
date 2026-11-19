@@ -299,7 +299,8 @@ RunService.Heartbeat:Connect(function()
 		end
 		for p in reaching do
 			local r = liveRoot(reaching, p)
-			if r and Hoops.reaches(r.CFrame, spot) then
+			-- a ball in a shot windup can only be blocked, not stolen (like 2K)
+			if r and not ball:GetAttribute("GatherAt") and Hoops.reaches(r.CFrame, spot) then
 				-- A steal knocks it loose away from the handler; whoever gets there first keeps it.
 				release(spot, ((spot - hRoot.Position) * FLAT).Unit * Hoops.POKE_SPEED + Vector3.new(0, 10, 0), h)
 				return
