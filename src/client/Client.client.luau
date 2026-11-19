@@ -8,6 +8,7 @@ local ContextActionService = game:GetService("ContextActionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 local StarterGui = game:GetService("StarterGui")
+local UserInputService = game:GetService("UserInputService")
 local Hoops = require(ReplicatedStorage:WaitForChild("Hoops"))
 local action = ReplicatedStorage:WaitForChild("Action")
 local ball = workspace:WaitForChild("Basketball"):WaitForChild("Ball")
@@ -121,6 +122,8 @@ local hint = new("TextLabel", { AnchorPoint = Vector2.new(0.5, 1), Size = UDim2.
 -- After a steal or defensive rebound you have to take it back past the arc before you can score.
 local takeBack = new("TextLabel", { AnchorPoint = Vector2.new(0.5, 0), Size = UDim2.fromOffset(240, 26), Position = UDim2.new(0.5, 0, 0, 52), BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(255, 160, 60), TextStrokeTransparency = 0.3, TextScaled = true, Font = Enum.Font.GothamBlack, Text = "TAKE IT BACK", Visible = false, Parent = gui })
 gui.Parent = me:WaitForChild("PlayerGui")
+-- Touch controls (built at the bottom of this script), shown while playing by touch.
+local touchGui = new("ScreenGui", { Name = "R2KTouch", ResetOnSpawn = false, DisplayOrder = 5, ScreenInsets = Enum.ScreenInsets.CoreUISafeInsets, Enabled = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled, Parent = me.PlayerGui })
 
 -- Ball shadow: a soft disc on the floor under the ball (reads the dribble's height and loose balls at a glance).
 local shadow = new("Part", { Name = "BallShadow", Anchored = true, CanCollide = false, CanQuery = false, CanTouch = false, CastShadow = false, Shape = Enum.PartType.Cylinder, Material = Enum.Material.SmoothPlastic, Color = Color3.new(0, 0, 0), Size = Vector3.new(0.02, 1.2, 1.2), Parent = workspace })
@@ -325,7 +328,7 @@ RunService.RenderStepped:Connect(function()
 	-- defense) slides facing the ball handler, everyone else turns where they run.
 	local root = myRoot()
 	local hum = root and me.Character:FindFirstChildOfClass("Humanoid")
-	hint.Visible = #bots:GetChildren() > 0
+	hint.Visible = #bots:GetChildren() > 0 and not touchGui.Enabled -- touch has its own bot buttons
 	hint.Text = `P / D-pad up: defense drill   ·   O / D-pad down: bot level ({bots:GetAttribute("Level") or "Medium"})`
 	takeBack.Visible = iHaveBall() and ball:GetAttribute("MustClear") == true
 	if not hum then
@@ -489,7 +492,7 @@ end, false, HIGH, Enum.KeyCode.LeftControl, Enum.KeyCode.ButtonL2)
 
 -- Same button shoots on offense and steals on defense, like 2K. Near the rim, a shot is a layup or dunk.
 local jumpShot = nil
-ContextActionService:BindActionAtPriority("ShootOrSteal", function(_, state)
+local function shootOrSteal(_, state)
 	if state == Enum.UserInputState.Begin then
 		if iHaveBall() then
 			local now = workspace:GetServerTimeNow()
@@ -552,17 +555,19 @@ ContextActionService:BindActionAtPriority("ShootOrSteal", function(_, state)
 		fill.BackgroundColor3 = if excellent then GREEN else ORANGE
 		flash(feedback, if excellent then "Excellent" else `{if quality >= 0.5 then "Slightly" else "Very"} {timing}`, if excellent then GREEN else ORANGE, 0.9)
 	end
-end, true, HIGH, Enum.KeyCode.E, Enum.KeyCode.ButtonX)
+end
+ContextActionService:BindActionAtPriority("ShootOrSteal", shootOrSteal, false, HIGH, Enum.KeyCode.E, Enum.KeyCode.ButtonX)
 
-ContextActionService:BindActionAtPriority("Pass", function(_, state)
+local function pass(_, state)
 	if state == Enum.UserInputState.Begin and iHaveBall() then
 		queued = nil
 		action:FireServer("pass")
 	end
-end, true, HIGH, Enum.KeyCode.R, Enum.KeyCode.ButtonA)
+end
+ContextActionService:BindActionAtPriority("Pass", pass, false, HIGH, Enum.KeyCode.R, Enum.KeyCode.ButtonA)
 
 -- Block: jump with both arms up. Anyone can do it anywhere; it only matters near the ball handler.
-ContextActionService:BindActionAtPriority("Block", function(_, state)
+local function block(_, state)
 	local now = workspace:GetServerTimeNow()
 	if state == Enum.UserInputState.Begin and not iHaveBall() and now - myBlockAt >= Hoops.BLOCK_COOLDOWN then
 		myBlockAt = now
@@ -573,7 +578,8 @@ ContextActionService:BindActionAtPriority("Block", function(_, state)
 		play("Block")
 		action:FireServer("block")
 	end
-end, true, HIGH, Enum.KeyCode.F, Enum.KeyCode.ButtonY)
+end
+ContextActionService:BindActionAtPriority("Block", block, false, HIGH, Enum.KeyCode.F, Enum.KeyCode.ButtonY)
 
 -- Pro stick: flick the right stick and let go; Hoops.proStick turns the flick into a move (tested there).
 -- The flick's direction is where it reached furthest; spins are a half circle.
@@ -618,7 +624,7 @@ for _, key in KEYS do
 		if state == Enum.UserInputState.Begin then
 			tryMove(if l2Held and key[3] then key[3] else key[2])
 		end
-	end, key[2] == "Crossover", key[1]) -- mobile gets a Cross button
+	end, false, key[1])
 end
 
 -- Defense drill: the practice bot gets the ball at the top of the key (P, or D-pad up).
@@ -634,7 +640,139 @@ ContextActionService:BindAction("Level", function(_, state)
 	end
 end, false, Enum.KeyCode.O, Enum.KeyCode.DPadDown)
 
-ContextActionService:SetTitle("ShootOrSteal", "Shoot")
-ContextActionService:SetTitle("KeyCrossover", "Cross")
-ContextActionService:SetTitle("Pass", "Pass")
-ContextActionService:SetTitle("Block", "Block")
+
+-- Touch (iPhone and iPad) -------------------------------------------------------------------------
+-- Roblox's thumbstick moves you (left side). Everything else is on the right, 2K style: the big button shoots
+-- (steals on defense), the one beside it passes (blocks on defense), TURBO and L2 are toggles, and every dribble
+-- move sits together in one pad. The pad is laid out like the pro stick for the right hand: up = hesi, toward the
+-- other hand = cross, down = stepback, center = spin. With L2 on, the escape moves light up orange.
+local DARK, LIT = Color3.fromRGB(20, 20, 26), Color3.fromRGB(255, 150, 40)
+local controls = new("Frame", { AnchorPoint = Vector2.new(1, 1), Position = UDim2.fromScale(1, 1), Size = UDim2.fromOffset(400, 200), BackgroundTransparency = 1, Parent = touchGui })
+local controlScale = new("UIScale", { Parent = controls })
+local function fitToScreen() -- laid out for an iPhone's short side (~360px usable); bigger on an iPad
+	local size = touchGui.AbsoluteSize
+	controlScale.Scale = math.clamp(math.min(size.X, size.Y) / 360, 0.9, 1.4)
+end
+touchGui:GetPropertyChangedSignal("AbsoluteSize"):Connect(fitToScreen)
+fitToScreen()
+
+local lifts = {} -- [touch] = what to do when that finger lifts (even if it slid off the button)
+UserInputService.InputEnded:Connect(function(input)
+	local lift = lifts[input]
+	if lift then
+		lifts[input] = nil
+		lift()
+	end
+end)
+
+-- A touch button, placed by its center from the bottom-right of its parent. down() runs the moment a finger lands.
+local function touchButton(parent, text, w, h, x, y, down, up)
+	local b = new("TextButton", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(1, x, 1, y), Size = UDim2.fromOffset(w, h), BackgroundColor3 = DARK, BackgroundTransparency = 0.3, AutoButtonColor = false, Text = text, TextColor3 = Color3.new(1, 1, 1), TextScaled = true, Font = Enum.Font.GothamBlack, Parent = parent })
+	new("UICorner", { CornerRadius = UDim.new(if w == h then 0.5 else 0.3, 0), Parent = b })
+	new("UIStroke", { ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Color = Color3.new(1, 1, 1), Transparency = 0.55, Thickness = 2, Parent = b })
+	new("UIPadding", { PaddingLeft = UDim.new(0.1, 0), PaddingRight = UDim.new(0.1, 0), PaddingTop = UDim.new(0.28, 0), PaddingBottom = UDim.new(0.28, 0), Parent = b })
+	local pressed = new("UIScale", { Parent = b })
+	b.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch and input.UserInputState == Enum.UserInputState.Begin then
+			pressed.Scale = 0.9
+			down()
+			lifts[input] = function()
+				pressed.Scale = 1
+				if up then
+					up()
+				end
+			end
+		end
+	end)
+	return b
+end
+
+local shootButton = touchButton(controls, "SHOOT", 92, 92, -62, -62, function()
+	shootOrSteal(nil, Enum.UserInputState.Begin)
+end, function()
+	shootOrSteal(nil, Enum.UserInputState.End)
+end)
+local passButton = touchButton(controls, "PASS", 64, 64, -160, -44, function()
+	pass(nil, Enum.UserInputState.Begin) -- each one only acts on its side of the ball
+	block(nil, Enum.UserInputState.Begin)
+end)
+local turboButton = touchButton(controls, "TURBO", 58, 58, -52, -160, function()
+	sprinting = not sprinting
+end)
+local l2Button = touchButton(controls, "L2", 58, 58, -140, -138, function()
+	l2Held = not l2Held
+end)
+
+local dribblePad = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Parent = controls })
+local escapeButtons = {}
+for i, m in { -- right-hand pro stick directions, read like the stick: rows top to bottom
+	{ "TWEEN", "DoubleTween" }, { "HESI", "Hesitation" }, { "SIDE", "SideStep", "SideStepEscape" },
+	{ "CROSS", "Crossover" }, { "SPIN", "SpinMove", "SpinEscape" }, { "IN-OUT", "InAndOut" },
+	{ "BTL", "BetweenLegs" }, { "STEP", "Stepback", "StepbackEscape" }, { "BEHIND", "BehindBack" },
+} do
+	local col, row = (i - 1) % 3, (i - 1) // 3
+	local b = touchButton(dribblePad, m[1], 58, 46, -363 + 64 * col, -143 + 52 * row, function()
+		tryMove(if l2Held and m[3] then m[3] else m[2])
+	end)
+	if m[3] then
+		table.insert(escapeButtons, b)
+	end
+end
+
+-- Practice bot buttons (the hint's P and O keys), top left.
+local botButtons = new("Frame", { Position = UDim2.fromOffset(12, 8), Size = UDim2.fromOffset(240, 36), BackgroundTransparency = 1, Parent = touchGui })
+touchButton(botButtons, "DRILL", 96, 36, -192, -18, function()
+	action:FireServer("drill")
+end)
+local levelButton = touchButton(botButtons, "BOT: MEDIUM", 132, 36, -66, -18, function()
+	action:FireServer("level")
+end)
+
+-- Buttons follow the play: offense or defense labels, toggles lit, the dribble pad only with the ball.
+local touchHadBall = false
+RunService.RenderStepped:Connect(function()
+	if not touchGui.Enabled then
+		return
+	end
+	local hasBall = iHaveBall()
+	if hasBall ~= touchHadBall then -- possession changed: turbo and L2 start off
+		touchHadBall = hasBall
+		sprinting, l2Held = false, false
+	end
+	shootButton.Text = if hasBall then "SHOOT" else "STEAL"
+	passButton.Text = if hasBall then "PASS" else "BLOCK"
+	l2Button.Text = if hasBall then "ESCAPE" else "LOCK D"
+	turboButton.BackgroundColor3 = if sprinting then LIT else DARK
+	l2Button.BackgroundColor3 = if l2Held then LIT else DARK
+	for _, b in escapeButtons do
+		b.BackgroundColor3 = if l2Held then LIT else DARK
+	end
+	dribblePad.Visible = hasBall
+	botButtons.Visible = #bots:GetChildren() > 0
+	levelButton.Text = `BOT: {string.upper(bots:GetAttribute("Level") or "Medium")}`
+end)
+
+-- Show touch controls while playing by touch; a keyboard or controller hides them (an iPad with a keyboard, say).
+UserInputService.LastInputTypeChanged:Connect(function(kind)
+	if kind == Enum.UserInputType.Touch then
+		touchGui.Enabled = true
+	elseif kind == Enum.UserInputType.Keyboard or kind.Name:find("Gamepad") then
+		touchGui.Enabled = false
+	end
+end)
+
+-- Roblox's jump button sits where these buttons go, and jumping is Block's job here.
+-- shortcut: reaches into Roblox's TouchGui by name; if Roblox renames it the jump button just shows again
+if UserInputService.TouchEnabled then
+	task.spawn(function()
+		local touchControls = me.PlayerGui:WaitForChild("TouchGui", 30)
+		local jump = touchControls and touchControls:WaitForChild("TouchControlFrame", 5)
+		jump = jump and jump:WaitForChild("JumpButton", 5)
+		if jump then
+			jump.Visible = false
+			jump:GetPropertyChangedSignal("Visible"):Connect(function()
+				jump.Visible = false
+			end)
+		end
+	end)
+end

@@ -100,7 +100,16 @@ The controller layout follows 2K.
 
 The practice bot plays under the same stamina rules.
 
-**Mobile:** Shoot, Cross, Pass and Block appear as on-screen buttons. The other dribble moves are controller and keyboard only for now.
+**iPhone and iPad:** the touch controls show while you play by touch, and hide when you use a keyboard or controller.
+- **Left side:** Roblox's thumbstick moves you.
+- **Right side:**
+  - **SHOOT / STEAL:** the big button. Hold, then let go on the green, like the keyboard and controller.
+  - **PASS / BLOCK:** the button beside it.
+  - **TURBO and L2:** tap to toggle. L2 reads ESCAPE with the ball and LOCK D on defense. Both switch off when possession changes.
+  - **Dribble pad:** every move together in one 3×3 pad, shown while you have the ball. It's laid out like the pro stick for the right hand: hesi up top, cross toward the other hand, stepback at the bottom, spin in the middle. With L2 on, the side-step, spin and stepback buttons light up orange and become escapes.
+- **Practice bot:** DRILL and BOT level buttons sit at the top left.
+- **Sizing:** buttons scale with the screen, bigger on an iPad.
+- **No jump button:** the Roblox jump button is hidden, since Block does the jumping.
 
 ## Why dribbling has no lag
 
