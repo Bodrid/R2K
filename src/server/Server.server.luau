@@ -755,8 +755,7 @@ local function botDash(bot, name, hand)
 		if not root then
 			return
 		end
-		local cf = root.CFrame
-		local dir = if d[2] == "back" then -cf.LookVector elseif d[2] == "side" then cf.RightVector * (if hand == "Left" then -1 else 1) else cf.LookVector
+		local dir = Hoops.dashDirection(root.CFrame, d[2], hand)
 		local flatDir = Vector3.new(dir.X, 0, dir.Z).Unit * d[3]
 		local attachment = new("Attachment", { Parent = root })
 		new("LinearVelocity", { Attachment0 = attachment, RelativeTo = Enum.ActuatorRelativeTo.World, VelocityConstraintMode = Enum.VelocityConstraintMode.Plane, PrimaryTangentAxis = Vector3.xAxis, SecondaryTangentAxis = Vector3.zAxis, PlaneVelocity = Vector2.new(flatDir.X, flatDir.Z), MaxForce = 50000, Parent = root })

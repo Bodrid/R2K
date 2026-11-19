@@ -89,7 +89,6 @@ end
 
 -- Simulations ------------------------------------------------------------------------------------
 local DT, THINK = 1 / 30, 0.1
-local DASH = { Stepback = { 0.12, -1, 18, 0.3 }, StepbackEscape = { 0.1, -1, 20, 0.55 }, SpinMove = { 0.05, 1, 16, 0.45 }, SpinEscape = { 0.05, 1, 20, 0.45 } }
 local function inFloor(p)
 	return math.abs(p.X) <= 45 and p.Z >= -45 and p.Z <= 35
 end
@@ -136,12 +135,13 @@ local function offenseTrial(seed)
 			used[name] = true
 			local move = Hoops.MOVES[name]
 			busyUntil = t + move.duration
+			local d = Hoops.DASHES[name] -- the real dash, facing the rim like the real ball handler
+			if d then
+				local dir = Hoops.dashDirection(CFrame.lookAt(bot, bot + towardRim(bot)), d[2], hand)
+				dash = { at = t + d[1], dir = flat(dir).Unit, speed = d[3], untilT = t + d[1] + d[4] }
+			end
 			if move.switch then
 				hand = if hand == "Right" then "Left" else "Right"
-			end
-			local d = DASH[name]
-			if d then
-				dash = { at = t + d[1], dir = towardRim(bot) * d[2], speed = d[3], untilT = t + d[1] + d[4] }
 			end
 			if rng() < 0.35 then -- the defender bites
 				frozenUntil = t + 0.3

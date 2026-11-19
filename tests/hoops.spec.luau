@@ -153,6 +153,25 @@ for a, moveA in Hoops.MOVES do
 	end
 end
 
+-- Every dribble move moves the player a little, within the move, and in the right direction.
+for name, move in Hoops.MOVES do
+	local d = Hoops.DASHES[name]
+	if not move.finish then
+		assert(d, `{name} has no dash: it would leave the player standing still`)
+		assert(d[3] * d[4] >= 2.5, `{name} barely moves the player`)
+		assert(d[1] + d[4] <= move.duration + 1e-6, `{name}'s dash outlasts the move`)
+	end
+end
+do
+	local cf = CFrame.lookAt(Vector3.new(0, 3, 0), Vector3.new(0, 3, -10)) -- facing the basket (-Z); right is +X
+	local function dir(kind, hand)
+		return Hoops.dashDirection(cf, kind, hand)
+	end
+	assert(dir("side", "Right").X > 0.99 and dir("side", "Left").X < -0.99, "side goes toward the ball hand")
+	assert(dir("cross", "Right").X < -0.99 and dir("cross", "Left").X > 0.99, "cross goes toward the other hand")
+	assert(dir("forward", "Right").Z < -0.99 and dir("back", "Left").Z > 0.99, "forward is toward the basket, back away")
+end
+
 -- Animation ids: Studio plays the copies saved in the place (no upload needed); published games the uploaded ids.
 do
 	local studio, registered = true, 0

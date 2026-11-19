@@ -437,8 +437,7 @@ local function begin(name, at)
 		task.delay(d[1], function()
 			local root = myRoot()
 			if root then
-				local cf = root.CFrame
-				dash(if d[2] == "back" then -cf.LookVector elseif d[2] == "side" then cf.RightVector * SIDE[hand] else cf.LookVector, d[3], d[4])
+				dash(Hoops.dashDirection(root.CFrame, d[2], hand), d[3], d[4])
 			end
 		end)
 	end

@@ -125,9 +125,16 @@ function Hoops.animationId(name)
 	return id and `rbxassetid://{id}`
 end
 
--- Bursts of movement for stepbacks, side-steps and spins: { delay, direction ("back", "side" toward the ball
--- hand, "forward"), speed, seconds }. Players and the practice bot both use them.
+-- Every dribble move moves you (a move in place is useless): { delay, direction, speed, seconds }. Directions are
+-- from the hand the move starts in: "back", "forward" (toward the basket), "side" (toward the ball hand), "cross"
+-- (toward the other hand). Players and the practice bot both use them.
 Hoops.DASHES = {
+	Crossover = { 0.15, "cross", 15, 0.25 }, -- jab across with the ball
+	BetweenLegs = { 0.15, "cross", 12, 0.25 },
+	BehindBack = { 0.15, "cross", 14, 0.28 },
+	InAndOut = { 0.2, "side", 14, 0.22 }, -- fake across, go back out
+	Hesitation = { 0.35, "forward", 16, 0.25 }, -- the pause, then the burst
+	DoubleTween = { 0.25, "back", 10, 0.3 }, -- rock back, making a little space
 	Stepback = { 0.12, "back", 18, 0.3 },
 	StepbackEscape = { 0.1, "back", 20, 0.55 },
 	SideStep = { 0.12, "side", 18, 0.3 },
@@ -135,6 +142,12 @@ Hoops.DASHES = {
 	SpinMove = { 0.05, "forward", 16, 0.45 },
 	SpinEscape = { 0.05, "forward", 20, 0.45 },
 }
+
+-- Which way a dash goes, for a holder at cf whose move started with the ball in `hand`.
+function Hoops.dashDirection(cf, kind, hand)
+	local side = cf.RightVector * (if hand == "Left" then -1 else 1)
+	return if kind == "back" then -cf.LookVector elseif kind == "side" then side elseif kind == "cross" then -side else cf.LookVector
+end
 
 -- The animation for a move from a given hand: the "_L" mirror from the left, except SpinMove (right only).
 function Hoops.animationFor(name, hand)
