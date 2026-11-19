@@ -93,15 +93,18 @@ return function(Hoops, Vector3, CFrame)
 		local pullUp = mind.pendingShot -- set before a stepback: shoot off it only if it made space
 		mind.pendingShot = false
 		local value = Hoops.makeChance(0.75, d, contested, s.stamina) * (if d >= Hoops.THREE_DIST then 3 else 2)
+		local fast = flat(me.vel).Magnitude > Hoops.WALK_SPEED + 1 -- on turbo: dunks from further out
 		local shootNow = d <= Hoops.DUNK_RANGE + 0.5
+			or (fast and not inLane and d <= Hoops.SPRINT_DUNK_RANGE)
 			or (pullUp and d <= Hoops.THREE_DIST + 4 and (gap >= 3.5 or rng() < 0.3))
 			or s.possessionAge > SKILL.shotClock
 			or (not inLane and d > Hoops.LAYUP_RANGE and value >= 1.05 and rng() < 0.5)
 			or (inLane and value >= 0.9 and rng() < 0.4)
 			or (inLane and d <= Hoops.LAYUP_RANGE and (gap > 3 or rng() < 0.15))
 		if shootNow then
-			local finish = if d <= Hoops.DUNK_RANGE then (if rng() < 0.3 then "DunkTwoHand" else "Dunk") elseif d <= Hoops.LAYUP_RANGE then "Layup" else "JumpShot"
-			local hold = math.clamp(Hoops.PERFECT_HOLD + gauss(rng) * SKILL.shotSpread, 0.3, Hoops.PERFECT_HOLD + Hoops.SHOT_WINDOW)
+			local finish = Hoops.pickFinish(me.pos, opp and opp.pos, fast, nil, rng) -- the same package players get
+			local perfect = Hoops.perfectHold(finish)
+			local hold = math.clamp(perfect + gauss(rng) * SKILL.shotSpread, 0.3, perfect + Hoops.SHOT_WINDOW)
 			out.act = { kind = "shoot", finish = finish, hold = hold }
 			return out
 		end

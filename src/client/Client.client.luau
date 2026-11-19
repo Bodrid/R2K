@@ -14,7 +14,6 @@ local action = ReplicatedStorage:WaitForChild("Action")
 local ball = workspace:WaitForChild("Basketball"):WaitForChild("Ball")
 local me = Players.LocalPlayer
 
-local METER_MAX = Hoops.PERFECT_HOLD + Hoops.SHOT_WINDOW
 local SIDE = { Right = 1, Left = -1 }
 local RIM = Vector3.new(0, Hoops.RIM_Y, Hoops.RIM_Z)
 local GREEN = Color3.fromRGB(70, 230, 110)
@@ -165,7 +164,9 @@ end
 -- for everyone else I read the server's attributes.
 local myHand, myMove, myMoveHand, myMoveAt = "Right", nil, nil, 0
 local myBlockAt = 0
-local shootStart = nil -- os.clock() when I started holding shoot (for the meter)
+local shootStart = nil -- server time my shot's path starts, while I hold shoot (for the meter and its timing)
+local shotPerfect, meterMax = Hoops.PERFECT_HOLD, Hoops.PERFECT_HOLD + Hoops.SHOT_WINDOW -- this shot's perfect hold; the meter's top
+local finishFace = nil -- while finishing: keep facing the way I came in (a reverse goes past the rim)
 local sprinting, l2Held, inStance = false, false, false
 
 local bots = workspace:WaitForChild("Bots")
@@ -240,9 +241,12 @@ RunService.RenderStepped:Connect(function()
 	local myRootPart = myRoot()
 	shotBar.Adornee, staminaBar.Adornee = myRootPart, myRootPart
 	if shootStart then
-		local held = os.clock() - shootStart
-		fill.Size = UDim2.fromScale(1, math.min(held / METER_MAX, 1))
-		fill.BackgroundColor3 = if Hoops.shotQuality(held) >= shotGreen then GREEN else Color3.new(1, 1, 1)
+		local held = workspace:GetServerTimeNow() - shootStart
+		fill.Size = UDim2.fromScale(1, math.clamp(held / meterMax, 0, 1))
+		fill.BackgroundColor3 = if Hoops.shotQuality(held, shotPerfect) >= shotGreen then GREEN else Color3.new(1, 1, 1)
+	end
+	if not iHaveBall() then
+		finishFace = nil
 	end
 	shotBar.Enabled = myRootPart ~= nil and (shootStart ~= nil or os.clock() < meterUntil)
 	local stamina = myStamina()
@@ -345,7 +349,7 @@ RunService.RenderStepped:Connect(function()
 		action:FireServer("stance", stance) -- intense D contests shots from further away
 	end
 	hum.WalkSpeed = if stance then Hoops.STANCE_SPEED elseif sprinting then Hoops.sprintSpeed(myStamina()) else Hoops.WALK_SPEED
-	local face = if iHaveBall() and not sprinting then RIM elseif stance then holderRoot.Position else nil
+	local face = if finishFace then finishFace elseif iHaveBall() and not sprinting then RIM elseif stance then holderRoot.Position else nil
 	local flat = face and Vector3.new(face.X - root.Position.X, 0, face.Z - root.Position.Z)
 	local align = root:FindFirstChild("FaceAlign")
 	if not align then
@@ -491,68 +495,143 @@ end, false, HIGH, Enum.KeyCode.LeftControl, Enum.KeyCode.ButtonL2)
 
 -- Same button shoots on offense and steals on defense, like 2K. Near the rim, a shot is a layup or dunk.
 local jumpShot = nil
+
+local function nearestOpponent() -- where the closest other body on the court is (a player or the practice bot)
+	local root, best, bestDist = myRoot(), nil, math.huge
+	if not root then
+		return nil
+	end
+	local others = bots:GetChildren()
+	for _, player in Players:GetPlayers() do
+		if player ~= me and player.Character then
+			table.insert(others, player.Character)
+		end
+	end
+	for _, char in others do
+		local r = char:FindFirstChild("HumanoidRootPart")
+		local d = r and (r.Position - root.Position).Magnitude
+		if d and d < bestDist then
+			best, bestDist = r.Position, d
+		end
+	end
+	return best
+end
+
+-- Every shot is a path (Hoops.MOVES), predicted here and checked by the server: a jump shot, or near the rim a
+-- finish from the package (Hoops.FINISHES). Like any move, it starts once the last one ends; its timing counts
+-- from then (server clock), and its perfect release is its own (Hoops.perfectHold).
+local function startShot(finish)
+	local now = workspace:GetServerTimeNow()
+	queued = nil -- the shot replaces any buffered move
+	local last = Hoops.MOVES[myMove or ""]
+	local startAt = math.max(now, if last then myMoveAt + last.duration else now)
+	shootStart, shotPerfect = startAt, Hoops.perfectHold(finish)
+	meterMax = shotPerfect + Hoops.SHOT_WINDOW
+	fill.Size = UDim2.fromScale(1, 0)
+	shotGreen = Hoops.greenAt(myStamina()) -- the band: releases this close to perfect always go in
+	local half = (1 - shotGreen) * Hoops.SHOT_WINDOW
+	band.Position = UDim2.fromScale(-0.35, 1 - (shotPerfect + half) / meterMax)
+	band.Size = UDim2.fromScale(1.7, 2 * half / meterMax)
+	feedback.Visible = false
+	local hand = myHand
+	myMove, myMoveHand, myMoveAt = finish, hand, startAt
+	action:FireServer("shootStart", finish, startAt)
+	if finish == "JumpShot" then
+		-- rise to the set point, hold it while the meter fills, release when you let go
+		jumpShot = play("JumpShot")
+		local started = shootStart
+		task.delay(startAt - now + Hoops.MOVES.JumpShot.duration, function()
+			if jumpShot and shootStart == started then
+				jumpShot:AdjustSpeed(0)
+			end
+		end)
+		return
+	end
+	local move = Hoops.MOVES[finish]
+	local function stillMine() -- still holding it: not released, stolen or blocked
+		return iHaveBall() and myMove == finish and myMoveAt == startAt
+	end
+	task.delay(startAt - now, function()
+		local root = myRoot()
+		if not (root and stillMine()) then
+			return
+		end
+		play(Hoops.animationFor(finish, hand))
+		finishFace = root.Position + (RIM - root.Position) * Vector3.new(50, 0, 50)
+		local prev = 0
+		for _, w in Hoops.finishGlide(finish, hand, root.Position) do -- carried toward the rim, leg by leg
+			local from, to, target = prev, w[1], w[2]
+			prev = to
+			task.delay(from, function()
+				local r = myRoot()
+				local gap = r and Vector3.new(target.X - r.Position.X, 0, target.Z - r.Position.Z)
+				if gap and gap.Magnitude > 0.05 and stillMine() then
+					dash(gap, math.min(gap.Magnitude / (to - from), Hoops.GLIDE_MAX), to - from)
+				end
+			end)
+		end
+	end)
+	if Hoops.FINISHES[finish].dunk then
+		task.delay(startAt - now + move.jumpAt + 0.25, function()
+			fovKick = -7 -- the slam
+		end)
+	end
+	task.delay(startAt - now + move.jumpAt, function() -- jump at the animation's takeoff
+		local hum = me.Character and me.Character:FindFirstChildOfClass("Humanoid")
+		if hum and stillMine() then
+			hum.Jump = true
+		end
+	end)
+end
+
+local function releaseShot()
+	local held = workspace:GetServerTimeNow() - shootStart
+	action:FireServer("shoot", held)
+	shootStart = nil
+	meterUntil = os.clock() + 0.9 -- the fill stays where you let go, so you see how close you were
+	if jumpShot then
+		jumpShot:AdjustSpeed(1)
+		jumpShot = nil
+	end
+	local quality = Hoops.shotQuality(held, shotPerfect)
+	local timing = if held < shotPerfect then "Early" else "Late"
+	local excellent = quality >= shotGreen
+	fill.BackgroundColor3 = if excellent then GREEN else ORANGE
+	flash(feedback, if excellent then "Excellent" else `{if quality >= 0.5 then "Slightly" else "Very"} {timing}`, if excellent then GREEN else ORANGE, 0.9)
+end
+
+-- On turbo near the rim, the pro stick (and the dribble keys and pad) picks a finish instead of a dribble move,
+-- like 2K. It goes up on its own with a good release (quality 0.75); a green needs the shoot button's timing.
+local function moveOrFinish(name)
+	local root = myRoot()
+	if sprinting and root and iHaveBall() and not shootStart then
+		local finish = Hoops.pickFinish(root.Position, nearestOpponent(), true, name, math.random)
+		if finish ~= "JumpShot" then
+			startShot(finish)
+			local started = shootStart
+			task.delay(started - workspace:GetServerTimeNow() + shotPerfect - 0.25 * Hoops.SHOT_WINDOW, function()
+				if shootStart == started then
+					releaseShot()
+				end
+			end)
+			return
+		end
+	end
+	tryMove(name)
+end
+
+-- Same button shoots on offense and steals on defense, like 2K. Near the rim, it picks the finish for you.
 local function shootOrSteal(_, state)
 	if state == Enum.UserInputState.Begin then
-		if iHaveBall() then
-			local now = workspace:GetServerTimeNow()
-			queued = nil -- the shot replaces any buffered move
-			shootStart = os.clock()
-			fill.Size = UDim2.fromScale(1, 0)
-			shotGreen = Hoops.greenAt(myStamina()) -- the band: releases this close to perfect always go in
-			local half = (1 - shotGreen) * Hoops.SHOT_WINDOW
-			band.Position = UDim2.fromScale(-0.35, 1 - (Hoops.PERFECT_HOLD + half) / METER_MAX)
-			band.Size = UDim2.fromScale(1.7, 2 * half / METER_MAX)
-			feedback.Visible = false
-			local root = myRoot()
-			local rimDist = root and Vector3.new(root.Position.X, 0, root.Position.Z - Hoops.RIM_Z).Magnitude or math.huge
-			-- Every shot is a path (Hoops.MOVES), predicted here and checked by the server: a jump shot, or near the
-			-- rim a layup or dunk. Like any move, it starts once the last one ends.
-			local finish = if rimDist > Hoops.LAYUP_RANGE then "JumpShot" elseif rimDist > Hoops.DUNK_RANGE then "Layup" elseif math.random() < 0.3 then "DunkTwoHand" else "Dunk"
-			local last = Hoops.MOVES[myMove or ""]
-			local startAt = math.max(now, if last then myMoveAt + last.duration else now)
-			myMove, myMoveHand, myMoveAt = finish, myHand, startAt
-			action:FireServer("shootStart", finish, startAt)
-			if finish == "JumpShot" then
-				-- rise to the set point, hold it while the meter fills, release when you let go
-				jumpShot = play("JumpShot")
-				local started = shootStart
-				task.delay(startAt - now + Hoops.MOVES.JumpShot.duration, function()
-					if jumpShot and shootStart == started then
-						jumpShot:AdjustSpeed(0)
-					end
-				end)
-			else
-				play(if finish == "DunkTwoHand" then finish else sided(finish))
-				if finish ~= "Layup" then
-					task.delay(startAt - now + Hoops.MOVES[finish].jumpAt + 0.25, function()
-						fovKick = -7 -- the slam
-					end)
-				end
-				task.delay(startAt - now + Hoops.MOVES[finish].jumpAt, function() -- jump at the animation's takeoff
-					local hum = me.Character and me.Character:FindFirstChildOfClass("Humanoid")
-					if hum and iHaveBall() and myMove == finish then -- still holding it: not released, stolen or blocked
-						hum.Jump = true
-					end
-				end)
-			end
-		else
+		local root = myRoot()
+		if iHaveBall() and root then
+			startShot(Hoops.pickFinish(root.Position, nearestOpponent(), sprinting, nil, math.random))
+		elseif not iHaveBall() then
 			play("StealSwipe")
 			action:FireServer("steal")
 		end
 	elseif shootStart and (state == Enum.UserInputState.End or state == Enum.UserInputState.Cancel) then
-		local held = os.clock() - shootStart
-		action:FireServer("shoot", held)
-		shootStart = nil
-		meterUntil = os.clock() + 0.9 -- the fill stays where you let go, so you see how close you were
-		if jumpShot then
-			jumpShot:AdjustSpeed(1)
-			jumpShot = nil
-		end
-		local quality = Hoops.shotQuality(held)
-		local timing = if held < Hoops.PERFECT_HOLD then "Early" else "Late"
-		local excellent = quality >= shotGreen
-		fill.BackgroundColor3 = if excellent then GREEN else ORANGE
-		flash(feedback, if excellent then "Excellent" else `{if quality >= 0.5 then "Slightly" else "Very"} {timing}`, if excellent then GREEN else ORANGE, 0.9)
+		releaseShot()
 	end
 end
 ContextActionService:BindActionAtPriority("ShootOrSteal", shootOrSteal, false, HIGH, Enum.KeyCode.E, Enum.KeyCode.ButtonX)
@@ -600,7 +679,7 @@ ContextActionService:BindActionAtPriority("ProStick", function(_, state, input)
 		local f = flick
 		flick = nil
 		if iHaveBall() then
-			tryMove(Hoops.proStick(f.peak.X, f.peak.Y, f.turned, os.clock() - f.at, SIDE[myHand], l2Held))
+			moveOrFinish(Hoops.proStick(f.peak.X, f.peak.Y, f.turned, os.clock() - f.at, SIDE[myHand], l2Held))
 		end
 	end
 	return Enum.ContextActionResult.Sink
@@ -617,7 +696,7 @@ local DRIBBLE_PAD = {
 for _, m in DRIBBLE_PAD do
 	ContextActionService:BindAction("Key" .. m[3], function(_, state)
 		if state == Enum.UserInputState.Begin then
-			tryMove(if l2Held and m[4] then m[4] else m[3])
+			moveOrFinish(if l2Held and m[4] then m[4] else m[3])
 		end
 	end, false, m[2])
 end
@@ -703,7 +782,7 @@ local escapeButtons = {}
 for i, m in DRIBBLE_PAD do
 	local col, row = (i - 1) % 3, (i - 1) // 3
 	local b = touchButton(dribblePad, m[1], 58, 46, -363 + 64 * col, -143 + 52 * row, function()
-		tryMove(if l2Held and m[4] then m[4] else m[3])
+		moveOrFinish(if l2Held and m[4] then m[4] else m[3])
 	end)
 	if m[4] then
 		table.insert(escapeButtons, b)

@@ -52,6 +52,8 @@ local Hoops = {
 
 	LAYUP_RANGE = 12, -- shooting this close to the rim is a layup (with a jump) instead of a jump shot
 	DUNK_RANGE = 5, -- and this close, a dunk
+	SPRINT_DUNK_RANGE = 9, -- on turbo, dunks start from further out (the finish carries you in)
+	GLIDE_MAX = 26, -- fastest a finish carries you toward the rim (studs/s)
 
 	CONTEST_RANGE = 6,
 	STEAL_RANGE = 6, -- steal only does anything this close to the handler
@@ -154,9 +156,17 @@ function Hoops.animationFor(name, hand)
 	return if hand == "Left" and name ~= "SpinMove" and name ~= "DunkTwoHand" and name ~= "JumpShot" then name .. "_L" else name
 end
 
--- 1 at a perfect release, falling to 0 at SHOT_WINDOW early or late.
-function Hoops.shotQuality(holdTime)
-	return math.clamp(1 - math.abs(holdTime - Hoops.PERFECT_HOLD) / Hoops.SHOT_WINDOW, 0, 1)
+-- 1 at a perfect release, falling to 0 at SHOT_WINDOW early or late. Hold time counts from when the shot's
+-- path starts; perfect: this shot's perfect hold (Hoops.perfectHold), default a jump shot's.
+function Hoops.shotQuality(holdTime, perfect)
+	return math.clamp(1 - math.abs(holdTime - (perfect or Hoops.PERFECT_HOLD)) / Hoops.SHOT_WINDOW, 0, 1)
+end
+
+-- When a shot's perfect release is: a jump shot after PERFECT_HOLD at its set point; a layup or dunk right as
+-- the ball reaches the top of its path (its release point), so every finish's timing matches its animation.
+function Hoops.perfectHold(name)
+	local move = Hoops.MOVES[name or ""]
+	return if move and move.finish and name ~= "JumpShot" then move.duration else Hoops.PERFECT_HOLD
 end
 
 -- The timing quality a green needs: tired, the window shrinks (stamina 0..1, default fresh).
@@ -180,8 +190,12 @@ function Hoops.sprintSpeed(stamina)
 end
 
 -- Roblox gravity is strong (196 studs/s²), so real-looking arcs need short flights.
-function Hoops.flightTime(distance)
-	return 0.45 + distance * 0.012
+function Hoops.flightTime(distance, name)
+	local f = Hoops.FINISHES[name or ""]
+	if f and f.flight then -- straight down through the rim; slower if it went up early, further out
+		return f.flight + math.max(distance - 2, 0) * 0.06
+	end
+	return 0.45 + distance * 0.012 + (f and f.hang or 0)
 end
 
 -- A point relative to a character, from its CFrame's own axes (no Roblox globals, so tests can run it).
@@ -245,16 +259,39 @@ Hoops.MOVES = {
 		{ 0.15, 0, -0.3172, 1.5421, "both" },
 		{ 0.32, 0, -1.2501, -0.083, "both" },
 		{ 0.5, 0, 2.6498, 0.2024, "both" },
-		{ 0.66, 1.5776, 2.4299, -1.0461, "R" },
+		{ 0.66, 1.5669, 2.0276, -1.2077, "R" },
 		{ 0.8, 1.7526, 2.5778, 1.628, "R" },
+	} },
+	DunkTomahawk = { switch = false, finish = true, jumpAt = 0.45, path = {
+		{ 0, S, T, F, "R" },
+		{ 0.15, 0, -0.3172, 1.5421, "both" },
+		{ 0.32, 0, -1.1409, -0.2182, "both" },
+		{ 0.48, 0, 2.701, 0.3462, "both" },
+		{ 0.66, 1.5788, 1.8008, -1.1417, "R" },
+		{ 0.84, 1.7541, 2.31, 1.7848, "R" },
 	} },
 	DunkTwoHand = { switch = false, finish = true, jumpAt = 0.38, path = {
 		{ 0, S, T, F, "R" },
 		{ 0.15, 0, -0.3172, 1.5421, "both" },
 		{ 0.3, 0, -1.0216, -0.3785, "both" },
 		{ 0.48, 0, 2.7041, 0.4814, "both" },
-		{ 0.64, 0, 2.0025, -1.1912, "both" },
+		{ 0.64, 0, 1.8677, -1.3805, "both" },
 		{ 0.78, 0, 1.7891, 1.9362, "both" },
+	} },
+	EuroStep = { switch = false, finish = true, jumpAt = 0.55, path = {
+		{ 0, S, T, F, "R" },
+		{ 0.15, 0, -0.3172, 1.5421, "both" },
+		{ 0.3, 0.9437, -0.2975, 1.1772, "both" },
+		{ 0.48, -1.0393, 0.1474, 1.1692, "both" },
+		{ 0.6, 1.4452, 3.2987, 0.2473, "R" },
+		{ 0.78, 1.4287, 3.4753, -0.1255, "R" },
+	} },
+	Floater = { switch = false, finish = true, jumpAt = 0.28, path = {
+		{ 0, S, T, F, "R" },
+		{ 0.12, 0, -0.1749, 1.4906, "both" },
+		{ 0.25, 0, 0.7969, 1.2032, "both" },
+		{ 0.38, 1.3945, 2.8588, 0.7778, "R" },
+		{ 0.5, 1.5, 3.226, 0.2443, "R" },
 	} },
 	Hesitation = { switch = false, path = {
 		{ 0, S, T, F, "R" },
@@ -262,6 +299,14 @@ Hoops.MOVES = {
 		{ 0.32, 1.7573, -0.4383, 1.144, "R" },
 		{ 0.45, 1.795, "floor", 1.0573 },
 		{ 0.6, S, T, F, "R" },
+	} },
+	HopStep = { switch = false, finish = true, jumpAt = 0.55, path = {
+		{ 0, S, T, F, "R" },
+		{ 0.15, 0, -0.3172, 1.5421, "both" },
+		{ 0.3, 0, 1.0115, 1.3612, "both" },
+		{ 0.45, 0, -0.3011, 1.5025, "both" },
+		{ 0.58, 0, 2.4443, 0.8945, "both" },
+		{ 0.75, 0, 2.2591, 1.5919, "both" },
 	} },
 	InAndOut = { switch = false, path = {
 		{ 0, S, T, F, "R" },
@@ -281,6 +326,13 @@ Hoops.MOVES = {
 		{ 0.32, 0, 0.1378, 1.4013, "both" },
 		{ 0.5, 1.744, 3.1316, 0.2473, "R" },
 		{ 0.68, 1.6321, 3.3687, -0.1181, "R" },
+	} },
+	ReverseLayup = { switch = false, finish = true, jumpAt = 0.42, path = {
+		{ 0, S, T, F, "R" },
+		{ 0.15, 0, -0.3172, 1.5421, "both" },
+		{ 0.3, 0, 0.1378, 1.4013, "both" },
+		{ 0.45, 1.7524, 3.1322, 0.2127, "R" },
+		{ 0.68, 2.127, 2.8984, -0.105, "R" },
 	} },
 	SideStep = { switch = false, path = {
 		{ 0, S, T, F, "R" },
@@ -353,6 +405,80 @@ for _, move in Hoops.MOVES do
 			move.hands[i] = { (before[1] + after[1]) / 2, (before[2] + after[2]) / 2 }
 		end
 	end
+end
+
+-- The finishing package (2K's layup package, and dunks). For each finish: range, how close to the rim it can start;
+-- dunk; glide, where the game carries the finisher while it plays: waypoints { time, across, short }, short =
+-- studs short of the rim along the line they came in on (negative: past it, under the rim), across = studs to the
+-- ball-hand side. A finisher never backs away from the rim to reach one. flight: the shot's air time (a dunk
+-- goes straight down through), hang: extra air time (a floater's high arc).
+Hoops.FINISHES = {
+	Layup = { range = Hoops.LAYUP_RANGE, glide = { { 0.4, 0, 3.5 }, { 0.68, 0, 2.2 } } },
+	EuroStep = { range = Hoops.LAYUP_RANGE, glide = { { 0.3, 1.8, 6 }, { 0.55, -1.2, 3.5 }, { 0.78, -1, 2.4 } } },
+	HopStep = { range = Hoops.LAYUP_RANGE, glide = { { 0.35, 0, 4.5 }, { 0.55, 0, 3.6 }, { 0.75, 0, 2.6 } } },
+	ReverseLayup = { range = Hoops.LAYUP_RANGE, glide = { { 0.42, 0.8, 0.6 }, { 0.68, 0.5, -1.6 } } },
+	Floater = { range = Hoops.LAYUP_RANGE, glide = { { 0.28, 0, 7.5 }, { 0.5, 0, 6.6 } }, hang = 0.35 },
+	Dunk = { range = Hoops.SPRINT_DUNK_RANGE, dunk = true, glide = { { 0.4, 0, 3 }, { 0.8, 0, 1.7 } }, flight = 0.22 },
+	DunkTwoHand = { range = Hoops.SPRINT_DUNK_RANGE, dunk = true, glide = { { 0.38, 0, 3 }, { 0.78, 0, 1.9 } }, flight = 0.22 },
+	DunkTomahawk = { range = Hoops.SPRINT_DUNK_RANGE, dunk = true, glide = { { 0.45, 0, 3.2 }, { 0.84, 0, 1.7 } }, flight = 0.22 },
+}
+
+-- Vectors here use the global Vector3 (the tests provide one), always flat on the finisher's height.
+local function flatXZ(v, y)
+	return Vector3.new(v.X, y, v.Z)
+end
+
+-- Which finish a shot from `pos` becomes, 2K style. stick: the pro-stick move flicked with turbo on near the rim
+-- (up: dunk or layup, sideways: euro step, down: hop step, spin: reverse, double tween: floater), or nil and
+-- it's picked for the situation. defender: the nearest defender's position, or nil.
+function Hoops.pickFinish(pos, defender, sprinting, stick, rng)
+	local toRim = Vector3.new(0, pos.Y, Hoops.RIM_Z) - flatXZ(pos, pos.Y)
+	local dist = toRim.Magnitude
+	if dist > Hoops.LAYUP_RANGE then
+		return "JumpShot"
+	end
+	local canDunk = dist <= (if sprinting then Hoops.SPRINT_DUNK_RANGE else Hoops.DUNK_RANGE)
+	local function dunk()
+		local r = rng()
+		return if sprinting and r < 0.35 then "DunkTomahawk" elseif r < 0.6 then "Dunk" else "DunkTwoHand"
+	end
+	if stick then
+		if stick == "Hesitation" then
+			return if canDunk then dunk() else "Layup"
+		end
+		return if stick:find("Stepback") then "HopStep" elseif stick:find("Spin") then "ReverseLayup" elseif stick == "DoubleTween" then "Floater" else "EuroStep"
+	end
+	local gap = defender and flatXZ(defender, pos.Y) - flatXZ(pos, pos.Y)
+	local inTheWay = gap ~= nil and gap.Magnitude < 5 and dist > 0.5 and gap.Magnitude > 0.1 and gap.Unit:Dot(toRim.Unit) > 0.7
+	if canDunk and not (inTheWay and gap.Magnitude < 2.5) then
+		return dunk()
+	elseif pos.Z < Hoops.RIM_Z + 1.5 then -- along the baseline: under the rim and up the other side
+		return "ReverseLayup"
+	elseif inTheWay then -- float it over them from out there, or step around them up close
+		return if dist > 7 then "Floater" else "EuroStep"
+	elseif gap and gap.Magnitude < 4 then -- body on body: power it up off two feet
+		return "HopStep"
+	end
+	return "Layup"
+end
+
+-- Where a finish carries someone who starts it at `from` with the ball in `hand`: { { time, position } }, flat
+-- at from's height, timed from the start of the finish.
+function Hoops.finishGlide(name, hand, from)
+	local f, out = Hoops.FINISHES[name], {}
+	if not f then
+		return out
+	end
+	local rim = Vector3.new(0, from.Y, Hoops.RIM_Z)
+	local back = flatXZ(from, from.Y) - rim
+	local short = back.Magnitude
+	back = if short > 0.1 then back / short else Vector3.new(0, 0, 1)
+	local side = Vector3.new(back.Z, 0, -back.X) * (if hand == "Left" then -1 else 1) -- ball-hand side, facing the rim
+	for i, w in f.glide do
+		short = math.min(w[3], short)
+		out[i] = { w[1], rim + back * short + side * w[2] }
+	end
+	return out
 end
 
 -- The ball's spot on a move's path `t` seconds in (right-hand version). Falling to the floor speeds up and

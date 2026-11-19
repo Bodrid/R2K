@@ -444,9 +444,9 @@ both("Dunk", frames({ -- right-hand dunk off two steps
 	{ 0.15, { drop = 0.55, right = 0.8, left = -0.5, lean = -20, R = HIP_GATHER_R, L = HIP_GATHER_L } }, -- gather step
 	{ 0.32, { drop = 0.8, left = 0.9, right = -0.4, lean = -18, R = { -20, 0, 10, 30 }, L = { -20, 0, -10, 30 } } }, -- deep load, arms swing back
 	{ 0.5, { air = 0.6, right = 1.5, left = -0.3, rightTuck = 80, tuck = 40, lean = -5, R = { 150, 0, -10, 60 }, L = { 150, 0, 10, 60 } } }, -- explode up, ball overhead
-	{ 0.66, { air = 1.0, right = 1.8, left = -0.6, rightTuck = 100, tuck = 60, lean = 8, R = { 175, 0, 10, 110, -30 }, L = { 110, 0, -30, 20 } } }, -- cock it back, legs kick
+	{ 0.66, { air = 1.0, right = 1.8, left = -0.6, rightTuck = 100, tuck = 60, lean = 14, R = { 190, 0, 10, 115, -35 }, L = { 110, 0, -30, 20 } } }, -- cock it way back, body arched, legs kick
 	{ 0.8, { air = 0.9, right = 1.2, left = 0, rightTuck = 70, tuck = 50, lean = -15, R = { 120, 0, 10, 10, 70 }, L = { 80, 0, -30, 20 } } }, -- slam through the rim
-	{ 0.92, { air = 0.4, right = 0.5, left = 0, rightTuck = 30, tuck = 30, lean = -8, R = { 140, 0, 5, 15 }, L = { 60, 0, -25, 20 } } }, -- drop
+	{ 0.92, { air = 0.5, right = 1.0, left = 0.6, rightTuck = 20, tuck = 15, lean = -2, R = { 170, 0, 5, 5 }, L = { 90, 0, -30, 30 } } }, -- hang on the rim, legs swing through
 	{ 1.05, { drop = 0.75, left = 0.5, right = -0.3, lean = -18, R = { 40, 0, 20, 40 }, L = { 40, 0, -20, 40 } } }, -- heavy landing
 	{ 1.25, { drop = 0.35, left = 0.2, right = -0.15, lean = -6, R = { 15, 0, 10, 25 }, L = { 15, 0, -10, 25 } } },
 }))
@@ -456,9 +456,69 @@ build("DunkTwoHand", frames({ -- two-foot jump, both hands
 	{ 0.15, { drop = 0.55, right = 0.7, left = -0.4, lean = -20, R = HIP_GATHER_R, L = HIP_GATHER_L } }, -- last step
 	{ 0.3, { drop = 0.85, left = 0.3, right = 0.3, lean = -25, R = { -30, 0, 15, 20 }, L = { -30, 0, -15, 20 } } }, -- feet together, load, arms back
 	{ 0.48, { air = 0.6, left = 0.1, right = 0.1, tuck = 20, lean = -5, R = { 150, 0, -5, 40 }, L = { 150, 0, 5, 40 } } }, -- take off
-	{ 0.64, { air = 1.0, left = -0.6, right = -0.6, tuck = 80, lean = 10, R = { 178, 0, -5, 100, -20 }, L = { 178, 0, 5, 100, -20 } } }, -- arch, ball behind the head
+	{ 0.64, { air = 1.0, left = -0.6, right = -0.6, tuck = 80, lean = 16, R = { 178, 0, -5, 100, -20 }, L = { 178, 0, 5, 100, -20 } } }, -- big arch, ball behind the head
 	{ 0.78, { air = 0.9, left = 0.4, right = 0.4, tuck = 50, lean = -18, R = { 115, 0, -5, 10, 60 }, L = { 115, 0, 5, 10, 60 } } }, -- slam
-	{ 0.92, { air = 0.4, left = 0.2, right = 0.2, tuck = 30, lean = -8, R = { 130, 0, -8, 20 }, L = { 130, 0, 8, 20 } } },
+	{ 0.92, { air = 0.5, left = 0.7, right = 0.7, tuck = 15, lean = -2, R = { 170, 0, -5, 5 }, L = { 170, 0, 5, 5 } } }, -- both hands hang on the rim
 	{ 1.05, { drop = 0.8, left = 0.3, right = 0.2, lean = -20, R = { 45, 0, 20, 40 }, L = { 45, 0, -20, 40 } } }, -- land
 	{ 1.25, { drop = 0.35, left = 0.15, right = -0.1, lean = -6, R = { 15, 0, 10, 25 }, L = { 15, 0, -10, 25 } } },
+}))
+
+-- The layup package and more dunks. Same conventions as Layup: authored for the right hand, mirrored for the left;
+-- the game carries the finisher toward the rim (Hoops.FINISHES) while these play in place.
+both("EuroStep", frames({ -- step out to the ball side, long step across, finish over the top
+	{ 0, READY },
+	{ 0.15, { drop = 0.55, right = 0.8, left = -0.5, lean = -20, R = HIP_GATHER_R, L = HIP_GATHER_L } }, -- gather
+	{ 0.3, { drop = 0.62, right = 0.6, left = -0.6, rightOut = 22, leftOut = -4, lean = -18, tilt = -12, twist = -18, hipTurn = -15, R = HIP_GATHER_R, L = HIP_GATHER_L } }, -- first step, wide to the ball side
+	{ 0.48, { drop = 0.68, left = 0.9, right = -0.6, leftOut = -24, rightOut = 4, lean = -16, tilt = 12, twist = 15, hipTurn = 18, R = { 55, 0, -25, 95 }, L = { 55, 0, 25, 95 } } }, -- long step across, ball swept to the chest
+	{ 0.6, { air = 0.5, right = 2.2, left = -0.4, rightTuck = 95, tuck = 25, lean = 0, tilt = 6, R = { 150, 0, 10, 30, 30 }, L = { 70, 0, -20, 60 } } }, -- off the left foot
+	{ 0.78, { air = 0.7, right = 2.5, left = -0.5, rightTuck = 100, tuck = 30, lean = 4, tilt = 4, R = { 170, 0, 5, 5, 60 }, L = { 60, 0, -25, 50 } } }, -- finish high
+	{ 0.95, { air = 0.3, right = 0.5, left = 0.2, rightTuck = 40, tuck = 30, lean = -2, R = { 120, 0, 10, 30 }, L = { 40, 0, -20, 40 } } },
+	{ 1.1, { drop = 0.6, left = 0.4, right = -0.2, lean = -10, R = { 30, 0, 15, 30 }, L = { 30, 0, -15, 30 } } },
+	{ 1.25, { drop = 0.3, left = 0.2, right = -0.1, lean = -5, R = { 10, 0, 5, 20 }, L = { 10, 0, -5, 20 } } },
+}))
+
+both("HopStep", frames({ -- hop into a two-foot jump stop, then a two-hand power finish
+	{ 0, READY },
+	{ 0.15, { drop = 0.55, right = 0.8, left = -0.5, lean = -20, R = HIP_GATHER_R, L = HIP_GATHER_L } }, -- gather
+	{ 0.3, { air = 0.35, left = 0.3, right = 0.2, tuck = 45, lean = -14, R = { 50, 0, -10, 105 }, L = { 50, 0, 10, 105 } } }, -- the hop
+	{ 0.45, { drop = 0.9, left = 0.35, right = 0.25, leftOut = -14, rightOut = 14, lean = -24, R = { 40, 0, -15, 110 }, L = { 40, 0, 15, 110 } } }, -- two-foot landing, ball chinned
+	{ 0.58, { air = 0.5, left = 0.1, right = 0.2, tuck = 30, lean = -6, R = { 130, 0, -10, 50 }, L = { 130, 0, 10, 50 } } }, -- explode up
+	{ 0.75, { air = 0.8, left = -0.2, right = 0.1, tuck = 40, lean = -8, R = { 130, 0, -15, 0, 20 }, L = { 130, 0, 15, 0, 20 } } }, -- two hands, up and out over the rim
+	{ 0.92, { air = 0.3, left = 0.2, right = 0.2, tuck = 30, lean = -4, R = { 110, 0, 0, 30 }, L = { 110, 0, 0, 30 } } },
+	{ 1.08, { drop = 0.8, left = 0.3, right = 0.2, leftOut = -8, rightOut = 8, lean = -18, R = { 40, 0, 15, 40 }, L = { 40, 0, -15, 40 } } },
+	{ 1.25, { drop = 0.35, left = 0.15, right = -0.1, lean = -6, R = { 15, 0, 10, 25 }, L = { 15, 0, -10, 25 } } },
+}))
+
+both("ReverseLayup", frames({ -- under the rim and up the far side, reaching back over the head
+	{ 0, READY },
+	{ 0.15, { drop = 0.55, right = 0.8, left = -0.5, lean = -20, R = HIP_GATHER_R, L = HIP_GATHER_L } }, -- gather
+	{ 0.3, { drop = 0.65, left = 0.9, right = -0.4, lean = -12, R = GATHER_R, L = GATHER_L } }, -- jump step
+	{ 0.45, { air = 0.5, right = 2.0, left = -0.4, rightTuck = 90, tuck = 25, lean = 8, twist = 15, R = { 150, 0, 15, 40 }, L = { 70, 0, -20, 60 } } }, -- take off, leaning back
+	{ 0.68, { air = 0.7, right = 1.6, left = -0.6, rightTuck = 80, tuck = 35, lean = 18, twist = 25, hipTurn = 20, R = { 205, 0, 10, 15, 40 }, L = { 60, 0, -40, 40 } } }, -- reach back, flip it up
+	{ 0.85, { air = 0.3, right = 0.5, left = 0.2, rightTuck = 40, tuck = 30, lean = 4, R = { 130, 0, 10, 30 }, L = { 40, 0, -20, 40 } } },
+	{ 1.0, { drop = 0.6, left = 0.4, right = -0.2, lean = -8, R = { 30, 0, 15, 30 }, L = { 30, 0, -15, 30 } } },
+	{ 1.15, { drop = 0.3, left = 0.2, right = -0.1, lean = -5, R = { 10, 0, 5, 20 }, L = { 10, 0, -5, 20 } } },
+}))
+
+both("Floater", frames({ -- quick gather, soft one-hand push from the chest over the shot blocker
+	{ 0, READY },
+	{ 0.12, { drop = 0.5, right = 0.7, left = -0.4, lean = -16, R = HIP_GATHER_R, L = HIP_GATHER_L } }, -- quick gather
+	{ 0.25, { drop = 0.55, left = 0.8, right = -0.3, lean = -8, R = { 70, 0, -15, 100 }, L = { 70, 0, 15, 100 } } }, -- plant, ball to the chin
+	{ 0.38, { air = 0.35, right = 1.4, left = -0.2, rightTuck = 70, tuck = 25, lean = -2, R = { 120, 0, -5, 60, -10 }, L = { 110, 0, 10, 60 } } }, -- rise, ball in front of the face
+	{ 0.5, { air = 0.5, right = 1.5, left = -0.3, rightTuck = 75, tuck = 30, lean = 2, R = { 155, 0, 0, 15, 60 }, L = { 100, 0, -15, 40 } } }, -- push it up soft
+	{ 0.68, { air = 0.25, right = 0.5, left = 0.1, rightTuck = 35, tuck = 25, lean = -2, R = { 110, 0, 5, 25 }, L = { 60, 0, -20, 40 } } },
+	{ 0.85, { drop = 0.5, left = 0.4, right = -0.2, lean = -10, R = { 30, 0, 15, 30 }, L = { 30, 0, -15, 30 } } },
+	{ 1.0, { drop = 0.3, left = 0.2, right = -0.1, lean = -5, R = { 10, 0, 5, 20 }, L = { 10, 0, -5, 20 } } },
+}))
+
+both("DunkTomahawk", frames({ -- two-foot load, ball cocked way back behind the head in one hand, whipped down
+	{ 0, READY },
+	{ 0.15, { drop = 0.55, right = 0.8, left = -0.5, lean = -20, R = HIP_GATHER_R, L = HIP_GATHER_L } }, -- gather
+	{ 0.32, { drop = 0.85, left = 0.4, right = 0.2, lean = -24, R = { -25, 0, 15, 25 }, L = { -25, 0, -15, 25 } } }, -- deep load, arms back
+	{ 0.48, { air = 0.6, left = 0.2, right = 0.4, tuck = 35, lean = -5, R = { 150, 0, -10, 50 }, L = { 150, 0, 10, 50 } } }, -- explode, ball overhead
+	{ 0.66, { air = 1.05, left = -0.8, right = -0.6, tuck = 90, lean = 16, R = { 200, 0, 15, 120, -40 }, L = { 120, 0, -35, 20 } } }, -- cock it back, body arched, heels up
+	{ 0.84, { air = 0.9, left = 0.5, right = 0.6, tuck = 55, lean = -18, R = { 115, 0, 10, 5, 75 }, L = { 70, 0, -30, 20 } } }, -- the hammer
+	{ 0.96, { air = 0.4, left = 0.3, right = 0.3, tuck = 30, lean = -8, R = { 140, 0, 5, 15 }, L = { 60, 0, -25, 20 } } },
+	{ 1.1, { drop = 0.8, left = 0.5, right = -0.2, lean = -20, R = { 40, 0, 20, 40 }, L = { 40, 0, -20, 40 } } }, -- heavy landing
+	{ 1.3, { drop = 0.35, left = 0.2, right = -0.15, lean = -6, R = { 15, 0, 10, 25 }, L = { 15, 0, -10, 25 } } },
 }))

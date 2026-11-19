@@ -453,7 +453,8 @@ local function shoot(p, root, holdTime)
 	end
 
 	local target = RIM
-	if math.random() >= Hoops.makeChance(Hoops.shotQuality(holdTime), dist, contested, stamina[p]) then
+	local kind = ball:GetAttribute("Move") -- which shot: a jump shot, or a finish with its own timing and arc
+	if math.random() >= Hoops.makeChance(Hoops.shotQuality(holdTime, Hoops.perfectHold(kind)), dist, contested, stamina[p]) then
 		local a = math.random() * math.pi * 2
 		target += Vector3.new(math.cos(a), 0, math.sin(a)) * Hoops.RIM_RADIUS -- aim at the iron: a real clank and rebound
 	end
@@ -461,7 +462,7 @@ local function shoot(p, root, holdTime)
 	-- an uncleared shot can still go in, it just doesn't count
 	lastShot = { player = p, points = if ball:GetAttribute("MustClear") then 0 elseif dist >= Hoops.THREE_DIST then 3 else 2 }
 	local from = heldSpot(root) -- wherever the ball is on the shot's path
-	local t = Hoops.flightTime(dist)
+	local t = Hoops.flightTime(dist, kind)
 	release(from, Hoops.launchVelocity(from, target, t, Vector3.new(0, -workspace.Gravity, 0)))
 	-- backspin, around the shooter's right-hand axis (a real shot's spin; shows on the ball's seams)
 	ball.AssemblyAngularVelocity = root.CFrame.RightVector * 18
@@ -488,10 +489,9 @@ function act.shootStart(p, root, name, at)
 	tire(p, 0) -- no regen through the green window, so the green they saw on their meter is the one judged
 	-- Every shot is a path (Hoops.MOVES). Near the rim a layup or dunk is asked for: check it's really in range
 	-- (with slack for ping), otherwise it's a jump shot.
-	local finish = Hoops.MOVES[name]
+	local finish = Hoops.FINISHES[name]
 	local rimDist = ((root.Position - RIM) * FLAT).Magnitude
-	local inRange = rimDist <= (if name == "Layup" then Hoops.LAYUP_RANGE else Hoops.DUNK_RANGE) + 3
-	startPath(if finish and finish.finish and (name == "JumpShot" or inRange) then name else "JumpShot", at)
+	startPath(if finish and rimDist <= finish.range + 3 then name else "JumpShot", at)
 	ball:SetAttribute("GatherAt", workspace:GetServerTimeNow()) -- marks a shot under way (no steals)
 end
 
@@ -503,7 +503,7 @@ function act.shoot(p, root, hold)
 	end
 	-- Trust the client's timing so lag doesn't ruin releases, unless it's far from what the server saw.
 	-- shortcut: a cheater can still claim perfect within HOLD_TOLERANCE, tighten or add anti-cheat before launch
-	local serverHold = os.clock() - started
+	local serverHold = workspace:GetServerTimeNow() - (ball:GetAttribute("MoveAt") or 0) -- timed from the shot's path start
 	if typeof(hold) ~= "number" or not (math.abs(hold - serverHold) <= Hoops.HOLD_TOLERANCE) then
 		hold = serverHold
 	end
@@ -745,6 +745,14 @@ local function removeBot(bot)
 	bot.Character:Destroy()
 end
 
+local function push(root, velocity, duration) -- horizontal velocity for a while (gravity still works)
+	local attachment = new("Attachment", { Parent = root })
+	new("LinearVelocity", { Attachment0 = attachment, RelativeTo = Enum.ActuatorRelativeTo.World, VelocityConstraintMode = Enum.VelocityConstraintMode.Plane, PrimaryTangentAxis = Vector3.xAxis, SecondaryTangentAxis = Vector3.zAxis, PlaneVelocity = Vector2.new(velocity.X, velocity.Z), MaxForce = 50000, Parent = root })
+	task.delay(duration, function()
+		attachment:Destroy()
+	end)
+end
+
 local function botDash(bot, name, hand)
 	local d = Hoops.DASHES[name]
 	if not d then
@@ -752,17 +760,26 @@ local function botDash(bot, name, hand)
 	end
 	task.delay(d[1], function()
 		local root = rootOf(bot)
-		if not root then
-			return
+		if root then
+			local dir = Hoops.dashDirection(root.CFrame, d[2], hand)
+			push(root, Vector3.new(dir.X, 0, dir.Z).Unit * d[3], d[4])
 		end
-		local dir = Hoops.dashDirection(root.CFrame, d[2], hand)
-		local flatDir = Vector3.new(dir.X, 0, dir.Z).Unit * d[3]
-		local attachment = new("Attachment", { Parent = root })
-		new("LinearVelocity", { Attachment0 = attachment, RelativeTo = Enum.ActuatorRelativeTo.World, VelocityConstraintMode = Enum.VelocityConstraintMode.Plane, PrimaryTangentAxis = Vector3.xAxis, SecondaryTangentAxis = Vector3.zAxis, PlaneVelocity = Vector2.new(flatDir.X, flatDir.Z), MaxForce = 50000, Parent = root })
-		task.delay(d[4], function()
-			attachment:Destroy()
-		end)
 	end)
+end
+
+-- Carry the bot along a finish's glide (Hoops.finishGlide), one leg at a time, while it still has the ball.
+local function botGlide(bot, root, shot, hand)
+	local prev = 0
+	for _, w in Hoops.finishGlide(shot, hand, root.Position) do
+		local from, to, target = prev, w[1], w[2]
+		prev = to
+		task.delay(from, function()
+			local gap = (target - root.Position) * FLAT
+			if holder() == bot and root.Parent and gap.Magnitude > 0.05 then
+				push(root, gap.Unit * math.min(gap.Magnitude / (to - from), Hoops.GLIDE_MAX), to - from)
+			end
+		end)
+	end
 end
 
 -- The bot's next buffered move starts the moment the current one ends (chaining, like a player's).
@@ -793,6 +810,8 @@ local function botShoot(bot, root, finish, hold)
 	act.shootStart(bot, root, finish, workspace:GetServerTimeNow())
 	local shot = ball:GetAttribute("Move") -- the server may have turned it into a jump shot
 	local track = botPlay(bot, shot .. hand, Hoops.animationId(Hoops.animationFor(shot, hand)))
+	bot.lockFace = root.Position + (RIM - root.Position) * FLAT * 50 -- keep facing the way it came in (a reverse goes past the rim)
+	botGlide(bot, root, shot, hand)
 	local move = Hoops.MOVES[shot]
 	if shot == "JumpShot" and track then
 		task.delay(move.duration, function() -- hold the set point while "the meter fills"
@@ -922,7 +941,8 @@ RunService.Heartbeat:Connect(function()
 		local hum = root.Parent.Humanoid
 		hum.WalkSpeed = if bot.stance then Hoops.STANCE_SPEED elseif bot.sprint then Hoops.sprintSpeed(stamina[bot]) else Hoops.WALK_SPEED
 		hum:Move(if bot.shooting then Vector3.zero else bot.dir)
-		local flatFace = bot.face and Vector3.new(bot.face.X - root.Position.X, 0, bot.face.Z - root.Position.Z)
+		local face = if bot.shooting then bot.lockFace else bot.face
+		local flatFace = face and Vector3.new(face.X - root.Position.X, 0, face.Z - root.Position.Z)
 		local facing = flatFace ~= nil and flatFace.Magnitude > 0.5
 		hum.AutoRotate = not facing
 		bot.align.Enabled = facing

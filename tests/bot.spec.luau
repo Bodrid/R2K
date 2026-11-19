@@ -2,6 +2,7 @@
 local roblox = require("@lune/roblox")
 local CFrame, Vector3 = roblox.CFrame, roblox.Vector3
 local Hoops = require("../src/shared/Hoops")
+getfenv().Vector3 = roblox.Vector3 -- Hoops' finish helpers use the global Vector3, as in Roblox
 local Brain = require("../src/server/Bot")(Hoops, Vector3, CFrame)
 
 local Y = Hoops.FLOOR_Y + Hoops.RIG_HIP_HEIGHT + 1 -- standing root height
@@ -23,12 +24,13 @@ end
 -- Decisions --------------------------------------------------------------------------------------
 do -- at the rim it finishes
 	local out = Brain.offense({ now = 0, me = still(RIM_FLOOR + Vector3.new(0, 0, 3)), opp = still(CHECK), hand = "Right", busy = false, possessionAge = 1, mind = {}, rng = seeded(1) })
-	assert(out.act and out.act.kind == "shoot" and (out.act.finish == "Dunk" or out.act.finish == "DunkTwoHand"), "dunks at the rim")
+	assert(out.act and out.act.kind == "shoot" and Hoops.FINISHES[out.act.finish].dunk, "dunks at the rim")
 	local close = RIM_FLOOR + Vector3.new(0, 0, 9)
 	out = Brain.offense({ now = 0, me = still(close), opp = still(CHECK), hand = "Right", busy = false, possessionAge = 1, mind = {}, rng = seeded(2) })
 	assert(not out.act and out.dir:Dot(flat(RIM_FLOOR - close).Unit) > 0.99, "an open lane: keeps attacking the rim")
 	out = Brain.offense({ now = 0, me = still(close), opp = still(close + Vector3.new(0, 0, -3.6)), hand = "Right", busy = false, possessionAge = 1, mind = {}, rng = seeded(2) })
-	assert(out.act and out.act.finish == "Layup", "lane shut by a sagging defender: lays it up over them")
+	local f = out.act and Hoops.FINISHES[out.act.finish]
+	assert(f and not f.dunk, `lane shut by a sagging defender: finishes over or around them ({out.act and out.act.finish})`)
 end
 do -- a defender shading the ball hand gets crossed away from
 	local switches = 0
@@ -193,7 +195,7 @@ do
 			if r.dist > Hoops.THREE_DIST + 4 and not r.clock then
 				deep += 1
 			end
-			assert(r.hold >= 0.3 and r.hold <= Hoops.PERFECT_HOLD + Hoops.SHOT_WINDOW, "release timing in range")
+			assert(r.hold >= 0.3 and r.hold <= Hoops.perfectHold(r.finish) + Hoops.SHOT_WINDOW, "release timing in range")
 		end
 	end
 	local kinds = {}
