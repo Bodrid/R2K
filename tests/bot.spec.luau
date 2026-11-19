@@ -84,7 +84,6 @@ end
 
 -- Simulations ------------------------------------------------------------------------------------
 local DT, THINK = 1 / 30, 0.1
-local SIDE = { Right = 1, Left = -1 }
 local DASH = { Stepback = { 0.12, -1, 18, 0.3 }, StepbackEscape = { 0.1, -1, 20, 0.55 }, SpinMove = { 0.05, 1, 16, 0.45 }, SpinEscape = { 0.05, 1, 20, 0.45 } }
 local function inFloor(p)
 	return math.abs(p.X) <= 45 and p.Z >= -45 and p.Z <= 35
