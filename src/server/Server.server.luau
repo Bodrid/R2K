@@ -363,9 +363,17 @@ end)
 -- Same body for everyone on the court: keep each player's look (clothes, accessories, skin, face) on Roblox's
 -- default body at default scale, the body the animations and ball spots are calibrated to.
 local function standardBody(player)
-	local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	if not humanoid then
 		return
+	end
+	-- The avatar can finish loading before the character is in the world, and ApplyDescription only works there.
+	while not character:IsDescendantOf(workspace) do
+		character.AncestryChanged:Wait()
+		if player.Character ~= character then
+			return -- respawned meanwhile; the new character gets its own call
+		end
 	end
 	local ok, err = pcall(function()
 		local look = humanoid:GetAppliedDescription()
@@ -393,7 +401,7 @@ local function setUp(player)
 		standardBody(player) -- after the avatar loads, or it would put the player's own body back
 	end)
 	if player:HasAppearanceLoaded() then
-		standardBody(player)
+		task.spawn(standardBody, player) -- it can wait; don't hold up setting up other players
 	end
 end
 Players.PlayerAdded:Connect(setUp)
