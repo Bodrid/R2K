@@ -11,6 +11,13 @@ local open = Hoops.makeChance(0.8, 10, false)
 assert(Hoops.makeChance(0.8, 10, true) < open, "a contest lowers the odds")
 assert(Hoops.makeChance(0.8, 25, false) < open, "longer shots are harder")
 
+-- Stamina: tired shooting is worse and the green window shrinks; sprints slow down only once you're tired.
+assert(Hoops.makeChance(0.8, 10, false, 0.2) < open, "tired shots go in less")
+assert(Hoops.greenAt(0) > Hoops.greenAt(1) and Hoops.greenAt(1) == Hoops.GREEN, "tired, the green window shrinks")
+assert(Hoops.makeChance(Hoops.GREEN, 20, true, 1) == 1 and Hoops.makeChance(Hoops.GREEN, 20, true, 0) < 1, "a fresh green is a make; the same release tired isn't")
+assert(Hoops.sprintSpeed(1) == Hoops.SPRINT_SPEED and Hoops.sprintSpeed(Hoops.TIRED) == Hoops.SPRINT_SPEED, "full sprint until tired")
+assert(Hoops.sprintSpeed(0) == Hoops.WALK_SPEED and Hoops.sprintSpeed(Hoops.TIRED / 2) < Hoops.SPRINT_SPEED, "empty: a jog")
+
 -- The arc must land on the rim after t seconds and be falling when it gets there.
 local from, to = vector.create(0, 7, 0), vector.create(3, Hoops.RIM_Y, -20)
 local gravity = vector.create(0, -196.2, 0)

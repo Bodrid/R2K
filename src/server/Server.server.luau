@@ -232,6 +232,7 @@ local reaching = {} -- os.clock() until their reach stays live
 local nextBlock = {} -- os.clock() when they may block again
 local blocking = {} -- os.clock() until their block stays live
 local points, wins = {}, {} -- this game's points and total wins (players also see them in the leaderboard)
+local stamina, tiredAt = {}, {} -- 0..1, and when they last spent some (it comes back after STAMINA_REGEN_DELAY)
 local lastShot = nil -- { player, points } until the ball is caught
 local lastPossessor = nil -- who had the ball last (an offensive rebound needn't be taken back)
 local pickupLockUntil, pickupLockPlayer = 0, nil
@@ -245,6 +246,15 @@ end
 
 local function holder()
 	return byId(ball:GetAttribute("Holder"))
+end
+
+-- Spend some of someone's stamina, and pause its regen for STAMINA_REGEN_DELAY.
+local function tire(p, amount)
+	if not p or not p.Character then
+		return
+	end
+	stamina[p] = math.max((stamina[p] or 1) - amount, 0)
+	tiredAt[p] = os.clock()
 end
 
 -- Held-ball state lives in attributes with server-clock times, so everyone computes the same ball (Hoops.ballSpot).
@@ -284,6 +294,9 @@ local function startPath(name, at)
 	local t = if typeof(at) == "number" and at == at then math.clamp(at, now - Hoops.MAX_BACKDATE, now) else now
 	t = math.max(t, moveEndsAt())
 	local hand = ball:GetAttribute("Hand")
+	if not move.finish then -- dribble moves cost stamina (escapes double)
+		tire(holder(), Hoops.STAMINA_MOVE * (if name:find("Escape") then 2 else 1))
+	end
 	ball:SetAttribute("MoveHand", hand)
 	ball:SetAttribute("Move", name)
 	ball:SetAttribute("MoveAt", t)
@@ -357,6 +370,7 @@ end
 local function startGame(on)
 	for _, p in on do
 		points[p] = 0
+		stamina[p] = 1
 		local stat = leaderstat(p, "Points")
 		if stat then
 			stat.Value = 0
@@ -418,7 +432,7 @@ local function shoot(p, root, holdTime)
 	end
 
 	local target = RIM
-	if math.random() >= Hoops.makeChance(Hoops.shotQuality(holdTime), dist, contested) then
+	if math.random() >= Hoops.makeChance(Hoops.shotQuality(holdTime), dist, contested, stamina[p]) then
 		local a = math.random() * math.pi * 2
 		target += Vector3.new(math.cos(a), 0, math.sin(a)) * Hoops.RIM_RADIUS -- aim at the iron: a real clank and rebound
 	end
@@ -450,6 +464,7 @@ function act.shootStart(p, root, name, at)
 		return
 	end
 	shootStarts[p] = os.clock()
+	tire(p, 0) -- no regen through the green window, so the green they saw on their meter is the one judged
 	-- Every shot is a path (Hoops.MOVES). Near the rim a layup or dunk is asked for: check it's really in range
 	-- (with slack for ping), otherwise it's a jump shot.
 	local finish = Hoops.MOVES[name]
@@ -503,6 +518,7 @@ function act.block(p, root)
 	local h = holder()
 	if h ~= p and os.clock() >= (nextBlock[p] or 0) then
 		nextBlock[p] = os.clock() + Hoops.BLOCK_COOLDOWN - 0.1 -- slack so the client's own cooldown never disagrees
+		tire(p, Hoops.STAMINA_MOVE)
 		p.Character:SetAttribute("BlockAt", workspace:GetServerTimeNow()) -- everyone plays the animation
 		-- Only near the ball handler (or a shooter while the shot is up) does the ball go live for contact,
 		-- until the animation ends. Anywhere else it's just the animation.
@@ -621,6 +637,28 @@ RunService.Heartbeat:Connect(function()
 	end
 end)
 
+-- Stamina over time, for everyone on the court: sprinting (judged from how fast they really move, so it can't
+-- be faked) drains it; easing off brings it back. Published as a "Stamina" attribute for the stamina bar.
+RunService.Heartbeat:Connect(function(dt)
+	local now = os.clock()
+	for _, p in participants() do
+		local root = rootOf(p)
+		if root then
+			local v = root.AssemblyLinearVelocity
+			if Vector3.new(v.X, 0, v.Z).Magnitude > Hoops.WALK_SPEED + 1.5 then
+				tire(p, Hoops.STAMINA_SPRINT * dt)
+			elseif now - (tiredAt[p] or 0) > Hoops.STAMINA_REGEN_DELAY then
+				stamina[p] = math.min((stamina[p] or 1) + Hoops.STAMINA_REGEN * dt, 1)
+			end
+			local shown = p.Character:GetAttribute("Stamina")
+			local value = math.floor((stamina[p] or 1) * 100 + 0.5) / 100
+			if shown ~= value then
+				p.Character:SetAttribute("Stamina", value)
+			end
+		end
+	end
+end)
+
 -- Practice bot ------------------------------------------------------------------------------------
 -- Appears when someone's alone, leaves when a second player joins. Its brain (Bot.luau, tested in
 -- tests/bot.spec.luau) decides ~10 times a second; this part gives it a body: movement, facing, dashes,
@@ -679,7 +717,7 @@ end
 
 local function removeBot(bot)
 	table.remove(bots, table.find(bots, bot))
-	for _, t in { shootStarts, nextSteal, reaching, nextBlock, blocking, points, wins } do
+	for _, t in { shootStarts, nextSteal, reaching, nextBlock, blocking, points, wins, stamina, tiredAt } do
 		t[bot] = nil
 	end
 	bot.Character:Destroy()
@@ -791,7 +829,7 @@ local function botThink(bot, root)
 		out = Brain.offense({
 			now = now, me = me, opp = oppRoot and { pos = oppRoot.Position, vel = oppRoot.AssemblyLinearVelocity },
 			hand = ball:GetAttribute("Hand"), busy = bot.shooting or #bot.queue > 0 or serverNow < moveEndsAt(),
-			possessionAge = now - bot.possessionAt, mustClear = ball:GetAttribute("MustClear") == true,
+			possessionAge = now - bot.possessionAt, mustClear = ball:GetAttribute("MustClear") == true, stamina = stamina[bot],
 			mind = bot.mind, rng = math.random,
 		})
 	else
@@ -813,7 +851,7 @@ local function botThink(bot, root)
 				now = now, me = me, opp = { pos = seen.pos, vel = seen.vel },
 				canReach = (hRoot.Position - root.Position).Magnitude <= Hoops.STEAL_RANGE and Hoops.reaches(root.CFrame, heldSpot(hRoot)),
 				shooting = shooting, shotKind = moveName, shotAge = serverNow - (moveAt or serverNow),
-				newMove = newMove, mind = bot.mind, rng = math.random,
+				newMove = newMove, stamina = stamina[bot], mind = bot.mind, rng = math.random,
 			})
 		else
 			out = Brain.chase({ me = me, ballPos = ball.Position, ballVel = ball.AssemblyLinearVelocity })
@@ -861,7 +899,7 @@ RunService.Heartbeat:Connect(function()
 		botNextMove(bot, root)
 		-- move, like a player: face the basket with the ball (unless sprinting), face the ball in stance
 		local hum = root.Parent.Humanoid
-		hum.WalkSpeed = if bot.stance then Hoops.STANCE_SPEED elseif bot.sprint then Hoops.SPRINT_SPEED else Hoops.WALK_SPEED
+		hum.WalkSpeed = if bot.stance then Hoops.STANCE_SPEED elseif bot.sprint then Hoops.sprintSpeed(stamina[bot]) else Hoops.WALK_SPEED
 		hum:Move(if bot.shooting then Vector3.zero else bot.dir)
 		local flatFace = bot.face and Vector3.new(bot.face.X - root.Position.X, 0, bot.face.Z - root.Position.Z)
 		local facing = flatFace ~= nil and flatFace.Magnitude > 0.5
@@ -942,7 +980,7 @@ for _, player in Players:GetPlayers() do -- Play Solo can add the player before 
 end
 
 Players.PlayerRemoving:Connect(function(player)
-	for _, t in { shootStarts, nextSteal, reaching, nextBlock, blocking, points, wins } do
+	for _, t in { shootStarts, nextSteal, reaching, nextBlock, blocking, points, wins, stamina, tiredAt } do
 		t[player] = nil
 	end
 end)

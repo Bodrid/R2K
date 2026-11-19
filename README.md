@@ -89,7 +89,16 @@ The controller layout follows 2K.
 
 **Take it back:** after a change of possession (a steal, a defensive rebound, a picked-off pass), you have to take the ball back past the 3-point line before you can score. TAKE IT BACK shows on screen until you do, and a basket made before clearing doesn't count. Check balls and offensive rebounds don't need clearing.
 
-**Shots:** shoot near the rim to finish with a layup, or a dunk when very close. Further out, it's a jump shot. After you release, the screen says how your timing was: GREEN!, Slightly Early, Very Late, and so on.
+**Shots:** shoot near the rim to finish with a layup, or a dunk when very close. Further out, it's a jump shot.
+
+**Shot meter:** like 2K, a bar beside your player fills while you hold shoot. Let go while the fill is in the green band and the shot always goes in. After you release, the fill freezes for a moment so you can see where you let go, with your timing: Excellent, Slightly Early, Very Late, and so on.
+
+**Stamina:** a thin bar on your other side shows up once you've spent some. Sprinting drains it, and each dribble move takes a little (escapes take double), as does each block. Ease off and it comes back after a moment. It turns yellow, then red. Being tired means:
+- **Slower sprint:** below a quarter tank your turbo fades to a jog.
+- **Smaller green band:** the window for a perfect release shrinks.
+- **Lower odds:** shots that aren't green go in less often.
+
+The practice bot plays under the same stamina rules.
 
 **Mobile:** Shoot, Cross, Pass and Block appear as on-screen buttons. The other dribble moves are controller and keyboard only for now.
 
@@ -102,13 +111,13 @@ The controller layout follows 2K.
 - The dribble runs on Roblox's synced server clock, so the server and every player work out the exact same ball position. That covers side, bounce height, every dribble move's own path (under the legs, behind the back, around a spin) and the shot windup.
 - Steals: pressing steal near the ball handler opens a reach that lasts a split second. The server checks real contact between your hands and the ball every frame, with no dice roll. Contact knocks the ball loose, and whoever gets there first keeps it. A ball low in its bounce slips under the reach, and crossing over away from the defender protects it.
 - Blocks: everyone sees the blocker jump with arms up. Pressing block near the ball handler, or near a shooter while the shot is up, makes the ball live for contact until the animation ends. If the raised hands touch the ball, whether it's held up for a shot or already in the air, it's swatted away and the shot can't score. Anywhere else, block is just the animation.
-- Shot odds come from timing and distance, like in 2K.
+- Shot odds come from timing, distance, contests and stamina, like in 2K. The server tracks stamina from how fast you really move, so it can't be faked.
 
 All tuning values live in `src/shared/Hoops.luau`, including the fixed camera (`CAMERA_HEIGHT`, `CAMERA_BACK`, `CAMERA_FOV`).
 
 ## Tests
 
-- `lune run tests/hoops.spec` checks the shot math, steal and block geometry, every move's ball path, chaining, and the pro stick.
+- `lune run tests/hoops.spec` checks the shot math (including stamina), steal and block geometry, every move's ball path, chaining, and the pro stick.
 - `lune run tests/bot.spec` checks the practice bot's decisions, and plays hundreds of simulated possessions on offense and defense at every level.
 - What these can't cover (feel, camera, real network play) is tested in Studio.
 

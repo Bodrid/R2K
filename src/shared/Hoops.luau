@@ -24,6 +24,14 @@ local Hoops = {
 	SPRINT_SPEED = 23, -- turbo (R2)
 	STANCE_SPEED = 11, -- intense D (L2 on defense): slower, but you slide facing the ball handler
 	STANCE_CONTEST = 2, -- intense D contests shots from this much further away
+
+	-- Stamina (0..1), like 2K: sprinting drains it, dribble moves and blocks take a bite, it comes back when
+	-- you ease off. Tired, your sprint slows and your green window shrinks.
+	STAMINA_SPRINT = 0.11, -- per second of sprinting (about 9s from full to empty)
+	STAMINA_MOVE = 0.035, -- per dribble move (escapes cost double), and per block
+	STAMINA_REGEN = 0.2, -- per second once you've eased off...
+	STAMINA_REGEN_DELAY = 0.75, -- ...for this long
+	TIRED = 0.25, -- below this, your sprint slows toward a jog
 	RIM_RADIUS = 1.5,
 	THREE_DIST = 20, -- horizontal distance from the rim
 
@@ -111,13 +119,24 @@ function Hoops.shotQuality(holdTime)
 	return math.clamp(1 - math.abs(holdTime - Hoops.PERFECT_HOLD) / Hoops.SHOT_WINDOW, 0, 1)
 end
 
--- 2K-style: greens always go in, otherwise timing, distance and contest set the odds.
-function Hoops.makeChance(quality, distance, contested)
-	if quality >= Hoops.GREEN then
+-- The timing quality a green needs: tired, the window shrinks (stamina 0..1, default fresh).
+function Hoops.greenAt(stamina)
+	return Hoops.GREEN + (1 - (stamina or 1)) * 0.08
+end
+
+-- 2K-style: greens always go in, otherwise timing, distance, contest and how tired you are set the odds.
+function Hoops.makeChance(quality, distance, contested, stamina)
+	if quality >= Hoops.greenAt(stamina) then
 		return 1
 	end
 	local base = math.clamp(0.95 - distance * 0.02, 0.25, 0.95) -- layup ~0.9, three ~0.55
-	return base * quality * (contested and 0.6 or 1)
+	return base * quality * (contested and 0.6 or 1) * (0.85 + 0.15 * (stamina or 1))
+end
+
+-- How fast a sprint goes at this stamina: full speed until you're tired, then down toward a jog.
+function Hoops.sprintSpeed(stamina)
+	local s = math.clamp((stamina or 1) / Hoops.TIRED, 0, 1)
+	return Hoops.WALK_SPEED + (Hoops.SPRINT_SPEED - Hoops.WALK_SPEED) * s
 end
 
 -- Roblox gravity is strong (196 studs/s²), so real-looking arcs need short flights.

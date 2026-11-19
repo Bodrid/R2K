@@ -50,7 +50,8 @@ return function(Hoops, Vector3, CFrame)
 	Brain.inCourt, Brain.rightOf = inCourt, rightOf
 
 	-- Offense. s = { now, me = { pos, vel }, opp = { pos, vel } or nil, hand, busy (a move or shot is under
-	-- way), possessionAge, mustClear (take it back past the arc first), mind (its memory, kept by the caller), rng }.
+	-- way), possessionAge, mustClear (take it back past the arc first), stamina (0..1, default fresh), mind (its
+	-- memory, kept by the caller), rng }.
 	-- Returns { dir, sprint, face, act } where act is nil, { kind = "move", name, chain } or
 	-- { kind = "shoot", finish, hold }.
 	function Brain.offense(s)
@@ -91,7 +92,7 @@ return function(Hoops, Vector3, CFrame)
 		local contested = gap <= Hoops.CONTEST_RANGE
 		local pullUp = mind.pendingShot -- set before a stepback: shoot off it only if it made space
 		mind.pendingShot = false
-		local value = Hoops.makeChance(0.75, d, contested) * (if d >= Hoops.THREE_DIST then 3 else 2)
+		local value = Hoops.makeChance(0.75, d, contested, s.stamina) * (if d >= Hoops.THREE_DIST then 3 else 2)
 		local shootNow = d <= Hoops.DUNK_RANGE + 0.5
 			or (pullUp and d <= Hoops.THREE_DIST + 4 and (gap >= 3.5 or rng() < 0.3))
 			or s.possessionAge > SKILL.shotClock
@@ -137,7 +138,7 @@ return function(Hoops, Vector3, CFrame)
 		-- Attack the rim: straight at it when the lane's clear, around the defender's side when it isn't.
 		local target = if inLane then me.pos + forward * 3 + right * mind.driveSide * 3.5 else Vector3.new(RIM.X, me.pos.Y, RIM.Z)
 		out.dir = unit(flat(inCourt(target, 1.5) - me.pos))
-		out.sprint = not inLane and d > 9 and gap > 4
+		out.sprint = not inLane and d > 9 and gap > 4 and (s.stamina or 1) > 0.3 -- saves its legs when tired
 		if out.sprint then
 			out.face = nil -- sprinting turns where it runs, like a player
 		end

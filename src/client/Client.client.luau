@@ -17,6 +17,7 @@ local METER_MAX = Hoops.PERFECT_HOLD + Hoops.SHOT_WINDOW
 local SIDE = { Right = 1, Left = -1 }
 local RIM = Vector3.new(0, Hoops.RIM_Y, Hoops.RIM_Z)
 local GREEN = Color3.fromRGB(70, 230, 110)
+local YELLOW, RED, ORANGE = Color3.fromRGB(250, 210, 60), Color3.fromRGB(235, 70, 60), Color3.fromRGB(255, 170, 60)
 
 local function new(className, props)
 	local inst = Instance.new(className)
@@ -39,13 +40,26 @@ end)
 -- UI ------------------------------------------------------------------------------------------------
 local gui = new("ScreenGui", { Name = "R2K", ResetOnSpawn = false })
 
--- Shot meter: fills while you hold shoot and turns green inside the green window; release on the line.
-local meter = rounded(new("Frame", { Size = UDim2.fromOffset(14, 130), Position = UDim2.new(0.5, 70, 0.5, -95), BackgroundColor3 = Color3.fromRGB(20, 20, 26), BackgroundTransparency = 0.25, Visible = false, Parent = gui }), 7)
-local fill = new("Frame", { AnchorPoint = Vector2.new(0, 1), Position = UDim2.fromScale(0, 1), Size = UDim2.fromScale(1, 0), BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0, Parent = meter })
-new("UICorner", { CornerRadius = UDim.new(0, 7), Parent = fill })
-new("Frame", { Size = UDim2.new(1, 10, 0, 3), Position = UDim2.new(0, -5, 1 - Hoops.PERFECT_HOLD / METER_MAX, -1), BackgroundColor3 = GREEN, BorderSizePixel = 0, Parent = meter })
--- What your release was: GREEN!, Slightly Early, Very Late...
-local feedback = new("TextLabel", { Size = UDim2.fromOffset(220, 30), Position = UDim2.new(0.5, 95, 0.5, -60), BackgroundTransparency = 1, TextColor3 = Color3.new(1, 1, 1), TextStrokeTransparency = 0.4, TextScaled = true, Font = Enum.Font.GothamBlack, TextXAlignment = Enum.TextXAlignment.Left, Visible = false, Parent = gui })
+-- 2K-style bars that ride beside your player (sizes in studs; offsets are on screen: + is right of you).
+local function sideBar(name, offsetX, width, height, barWidth)
+	local board = new("BillboardGui", { Name = name, Size = UDim2.fromScale(width, height), StudsOffset = Vector3.new(offsetX, 0.6, 0), AlwaysOnTop = true, LightInfluence = 0, ResetOnSpawn = false, Enabled = false, Parent = me:WaitForChild("PlayerGui") })
+	local bar = new("Frame", { Size = UDim2.fromScale(barWidth, 1), BackgroundColor3 = Color3.fromRGB(20, 20, 26), BackgroundTransparency = 0.2, Parent = board })
+	new("UICorner", { CornerRadius = UDim.new(0.5, 0), Parent = bar })
+	new("UIStroke", { Color = Color3.new(1, 1, 1), Transparency = 0.5, Thickness = 1.5, Parent = bar })
+	local barFill = new("Frame", { AnchorPoint = Vector2.new(0, 1), Position = UDim2.fromScale(0, 1), Size = UDim2.fromScale(1, 0), BorderSizePixel = 0, Parent = bar })
+	new("UICorner", { CornerRadius = UDim.new(0.5, 0), Parent = barFill })
+	return board, bar, barFill
+end
+
+-- Shot meter: fills while you hold shoot. Let go with the fill in the green band (it narrows when you're tired).
+-- After the release it freezes a moment with your timing: Excellent, Slightly Early, Very Late...
+local shotBar, meter, fill = sideBar("ShotMeter", 2.3, 3, 3.2, 0.14)
+local band = new("Frame", { Position = UDim2.fromScale(-0.35, 0), Size = UDim2.fromScale(1.7, 0), BackgroundColor3 = GREEN, BackgroundTransparency = 0.25, BorderSizePixel = 0, ZIndex = 2, Parent = meter })
+local feedback = new("TextLabel", { Position = UDim2.fromScale(0.22, 0.02), Size = UDim2.fromScale(0.78, 0.17), BackgroundTransparency = 1, TextColor3 = Color3.new(1, 1, 1), TextStrokeTransparency = 0.3, TextScaled = true, Font = Enum.Font.GothamBlack, TextXAlignment = Enum.TextXAlignment.Left, Visible = false, Parent = shotBar })
+local shotGreen, meterUntil = Hoops.GREEN, 0 -- this shot's green threshold; when the frozen meter hides
+
+-- Stamina: a thin bar on your other side, only while you're not fresh. Green, then yellow, then red when gassed.
+local staminaBar, _, staminaFill = sideBar("Stamina", -1.9, 0.3, 2.6, 1)
 
 -- Game status from the server: waiting, first to 21, who won.
 local status = ReplicatedStorage:WaitForChild("Status")
@@ -169,6 +183,10 @@ local function iHaveBall()
 	return ball:GetAttribute("Holder") == me.UserId
 end
 
+local function myStamina() -- 0..1, published by the server on my character
+	return me.Character and me.Character:GetAttribute("Stamina") or 1
+end
+
 local function myRoot()
 	return me.Character and me.Character:FindFirstChild("HumanoidRootPart")
 end
@@ -216,11 +234,18 @@ RunService.RenderStepped:Connect(function()
 	shadow.Size = Vector3.new(0.02, 1.1 + height * 0.12, 1.1 + height * 0.12)
 	shadow.Transparency = math.clamp(0.45 + height * 0.06, 0.45, 0.95)
 	shadow.CFrame = CFrame.new(ball.Position.X, Hoops.FLOOR_Y + 0.04, ball.Position.Z) * CFrame.Angles(0, 0, math.rad(90)) -- lie flat
+	local myRootPart = myRoot()
+	shotBar.Adornee, staminaBar.Adornee = myRootPart, myRootPart
 	if shootStart then
 		local held = os.clock() - shootStart
 		fill.Size = UDim2.fromScale(1, math.min(held / METER_MAX, 1))
-		fill.BackgroundColor3 = if Hoops.shotQuality(held) >= Hoops.GREEN then GREEN else Color3.new(1, 1, 1)
+		fill.BackgroundColor3 = if Hoops.shotQuality(held) >= shotGreen then GREEN else Color3.new(1, 1, 1)
 	end
+	shotBar.Enabled = myRootPart ~= nil and (shootStart ~= nil or os.clock() < meterUntil)
+	local stamina = myStamina()
+	staminaBar.Enabled = myRootPart ~= nil and stamina < 1
+	staminaFill.Size = UDim2.fromScale(1, stamina)
+	staminaFill.BackgroundColor3 = if stamina > 0.5 then YELLOW:Lerp(GREEN, (stamina - 0.5) * 2) else RED:Lerp(YELLOW, stamina * 2)
 
 	for char, rig in rigs do -- drop rigs of characters that left or respawned
 		if not char:IsDescendantOf(workspace) then
@@ -316,7 +341,7 @@ RunService.RenderStepped:Connect(function()
 		inStance = stance
 		action:FireServer("stance", stance) -- intense D contests shots from further away
 	end
-	hum.WalkSpeed = if stance then Hoops.STANCE_SPEED elseif sprinting then Hoops.SPRINT_SPEED else Hoops.WALK_SPEED
+	hum.WalkSpeed = if stance then Hoops.STANCE_SPEED elseif sprinting then Hoops.sprintSpeed(myStamina()) else Hoops.WALK_SPEED
 	local face = if iHaveBall() and not sprinting then RIM elseif stance then holderRoot.Position else nil
 	local flat = face and Vector3.new(face.X - root.Position.X, 0, face.Z - root.Position.Z)
 	local align = root:FindFirstChild("FaceAlign")
@@ -471,7 +496,11 @@ ContextActionService:BindActionAtPriority("ShootOrSteal", function(_, state)
 			queued = nil -- the shot replaces any buffered move
 			shootStart = os.clock()
 			fill.Size = UDim2.fromScale(1, 0)
-			meter.Visible = true
+			shotGreen = Hoops.greenAt(myStamina()) -- the band: releases this close to perfect always go in
+			local half = (1 - shotGreen) * Hoops.SHOT_WINDOW
+			band.Position = UDim2.fromScale(-0.35, 1 - (Hoops.PERFECT_HOLD + half) / METER_MAX)
+			band.Size = UDim2.fromScale(1.7, 2 * half / METER_MAX)
+			feedback.Visible = false
 			local root = myRoot()
 			local rimDist = root and Vector3.new(root.Position.X, 0, root.Position.Z - Hoops.RIM_Z).Magnitude or math.huge
 			-- Every shot is a path (Hoops.MOVES), predicted here and checked by the server: a jump shot, or near the
@@ -512,14 +541,16 @@ ContextActionService:BindActionAtPriority("ShootOrSteal", function(_, state)
 		local held = os.clock() - shootStart
 		action:FireServer("shoot", held)
 		shootStart = nil
-		meter.Visible = false
+		meterUntil = os.clock() + 0.9 -- the fill stays where you let go, so you see how close you were
 		if jumpShot then
 			jumpShot:AdjustSpeed(1)
 			jumpShot = nil
 		end
 		local quality = Hoops.shotQuality(held)
 		local timing = if held < Hoops.PERFECT_HOLD then "Early" else "Late"
-		flash(feedback, if quality >= Hoops.GREEN then "GREEN!" else `{if quality >= 0.5 then "Slightly" else "Very"} {timing}`, if quality >= Hoops.GREEN then GREEN else Color3.fromRGB(255, 170, 60), 1)
+		local excellent = quality >= shotGreen
+		fill.BackgroundColor3 = if excellent then GREEN else ORANGE
+		flash(feedback, if excellent then "Excellent" else `{if quality >= 0.5 then "Slightly" else "Very"} {timing}`, if excellent then GREEN else ORANGE, 0.9)
 	end
 end, true, HIGH, Enum.KeyCode.E, Enum.KeyCode.ButtonX)
 
