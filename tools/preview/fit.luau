@@ -57,6 +57,9 @@ local function shoulder(name, t)
 	return Vector3.new(body(root, (parts.UpperTorso * roblox.CFrame.new(v(joint.RightUpperArm.c0))).Position))
 end
 
+-- The calibrated body, so the game can check players really have it.
+fitted.RIG_HIP_HEIGHT = Rig.rig.hipHeight
+
 -- Shoulder height, standing (any animation's first frame is the rest pose).
 fitted.SHOULDER_UP = shoulder("StealSwipe", 0).Y
 

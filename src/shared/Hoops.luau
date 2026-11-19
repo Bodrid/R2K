@@ -24,6 +24,7 @@ local Hoops = {
 	DRIBBLE_FORWARD = 0.797,
 	DRIBBLE_TOP = -1.422, -- top of the bounce (ball center), below the root
 	HAND_LOW = -0.973, -- the dribble hand follows the ball down to here, then waits
+	RIG_HIP_HEIGHT = 1.807, -- the calibrated body's hip height; the server warns if players' bodies don't match
 	SHOULDER_UP = 0.524, -- a one-hand ball above shoulder height sits on the palm (layups, dunks); below it the hand is on top
 	GATHER_HEIGHT = 1.131, -- where the ball sits during the shot windup; the shot launches from here
 	GATHER_FORWARD = 1.22, -- in front of the face, in reach of R15 arms

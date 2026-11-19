@@ -360,15 +360,45 @@ RunService.Heartbeat:Connect(function()
 	end
 end)
 
+-- Same body for everyone on the court: keep each player's look (clothes, accessories, skin, face) on Roblox's
+-- default body at default scale, the body the animations and ball spots are calibrated to.
+local function standardBody(player)
+	local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then
+		return
+	end
+	local ok, err = pcall(function()
+		local look = humanoid:GetAppliedDescription()
+		look.Head, look.Torso, look.LeftArm, look.RightArm, look.LeftLeg, look.RightLeg = 0, 0, 0, 0, 0, 0
+		look.HeightScale, look.WidthScale, look.DepthScale, look.HeadScale = 1, 1, 1, 1
+		look.BodyTypeScale, look.ProportionScale = 0, 0
+		humanoid:ApplyDescription(look)
+	end)
+	if not ok then
+		warn(`couldn't standardize {player.Name}'s body: {err}`)
+	elseif math.abs(humanoid.HipHeight - Hoops.RIG_HIP_HEIGHT) > 0.05 then
+		warn(`the standard body (hip height {humanoid.HipHeight}) isn't the calibrated rig ({Hoops.RIG_HIP_HEIGHT}): re-dump the rig from a player character and re-run tools/preview/fit (see README)`)
+	end
+end
+
 local function addStats(player)
 	local stats = new("Folder", { Name = "leaderstats" })
 	new("IntValue", { Name = "Points", Parent = stats })
 	new("IntValue", { Name = "Wins", Parent = stats })
 	stats.Parent = player
 end
-Players.PlayerAdded:Connect(addStats)
-for _, player in Players:GetPlayers() do -- Play Solo can add the player before this script runs
+local function setUp(player)
 	addStats(player)
+	player.CharacterAppearanceLoaded:Connect(function()
+		standardBody(player) -- after the avatar loads, or it would put the player's own body back
+	end)
+	if player:HasAppearanceLoaded() then
+		standardBody(player)
+	end
+end
+Players.PlayerAdded:Connect(setUp)
+for _, player in Players:GetPlayers() do -- Play Solo can add the player before this script runs
+	setUp(player)
 end
 
 Players.PlayerRemoving:Connect(function(player)

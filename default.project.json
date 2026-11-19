@@ -24,7 +24,8 @@
         }
       },
       "$properties": {
-        "EnableMouseLockOption": false
+        "EnableMouseLockOption": false,
+        "GameSettingsAvatar": "R15"
       }
     }
   }

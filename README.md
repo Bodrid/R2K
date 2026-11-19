@@ -83,6 +83,10 @@ To polish one in Studio:
 
 Publish under the same account or group that owns the game. The game doesn't play these yet; send the IDs to wire them in.
 
+## Same body for everyone
+
+On spawn, the server puts every player on Roblox's default R15 body at default scale. Players keep their own clothes, accessories, skin colors and face. That default body is the one the animations and ball spots are calibrated to, so moves line up for everyone. If a spawned body doesn't match the calibrated rig, the server warns in Output.
+
 ## Calibrating the game to the animations
 
 The game's ball spots are measured from the animations on the real rig (`tools/preview/r15-rig.json`), not guessed. That covers the dribble spot, every move's ball path, each layup and dunk path, the shot windup, the block hands and the steal reach. Layups and dunks carry the ball along the animation's hands while you hold shoot, and the shot launches from wherever the ball is when you let go. After changing any animation:
