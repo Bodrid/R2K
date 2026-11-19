@@ -88,12 +88,18 @@ local function swish()
 	end
 end
 ReplicatedStorage:WaitForChild("Scored").OnClientEvent:Connect(function(scorerId, scorerName, points)
-	flash(popup, if scorerId == me.UserId then `+{points}  BUCKET!` else `{scorerName} +{points}`, popup.TextColor3, 1.5)
+	if points == 0 then -- it went in, but the ball hadn't been taken back past the arc
+		flash(popup, if scorerId == me.UserId then "NO BASKET: take it back!" else `{scorerName}: no basket`, Color3.fromRGB(255, 120, 90), 1.8)
+	else
+		flash(popup, if scorerId == me.UserId then `+{points}  BUCKET!` else `{scorerName} +{points}`, Color3.fromRGB(255, 205, 50), 1.5)
+	end
 	swish()
 end)
 
 -- Hint while the practice bot is around: how to practise defense.
-local hint = new("TextLabel", { AnchorPoint = Vector2.new(0.5, 1), Size = UDim2.fromOffset(360, 22), Position = UDim2.new(0.5, 0, 1, -16), BackgroundTransparency = 1, TextColor3 = Color3.new(1, 1, 1), TextTransparency = 0.25, TextStrokeTransparency = 0.6, TextScaled = true, Font = Enum.Font.GothamMedium, Text = "P / D-pad up: give the bot the ball (defense drill)", Visible = false, Parent = gui })
+local hint = new("TextLabel", { AnchorPoint = Vector2.new(0.5, 1), Size = UDim2.fromOffset(520, 20), Position = UDim2.new(0.5, 0, 1, -16), BackgroundTransparency = 1, TextColor3 = Color3.new(1, 1, 1), TextTransparency = 0.25, TextStrokeTransparency = 0.6, TextScaled = true, Font = Enum.Font.GothamMedium, Text = "", Visible = false, Parent = gui })
+-- After a steal or defensive rebound you have to take it back past the arc before you can score.
+local takeBack = new("TextLabel", { AnchorPoint = Vector2.new(0.5, 0), Size = UDim2.fromOffset(240, 26), Position = UDim2.new(0.5, 0, 0, 52), BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(255, 160, 60), TextStrokeTransparency = 0.3, TextScaled = true, Font = Enum.Font.GothamBlack, Text = "TAKE IT BACK", Visible = false, Parent = gui })
 gui.Parent = me:WaitForChild("PlayerGui")
 
 -- Player indicator: a ring on the floor under my player, orange with the ball, blue without (only I see it).
@@ -282,6 +288,8 @@ RunService.RenderStepped:Connect(function()
 	local root = myRoot()
 	local hum = root and me.Character:FindFirstChildOfClass("Humanoid")
 	hint.Visible = #bots:GetChildren() > 0
+	hint.Text = `P / D-pad up: defense drill   ·   O / D-pad down: bot level ({bots:GetAttribute("Level") or "Medium"})`
+	takeBack.Visible = iHaveBall() and ball:GetAttribute("MustClear") == true
 	if not hum then
 		return
 	end
@@ -568,6 +576,12 @@ ContextActionService:BindAction("Drill", function(_, state)
 		action:FireServer("drill")
 	end
 end, false, Enum.KeyCode.P, Enum.KeyCode.DPadUp)
+
+ContextActionService:BindAction("Level", function(_, state)
+	if state == Enum.UserInputState.Begin then
+		action:FireServer("level")
+	end
+end, false, Enum.KeyCode.O, Enum.KeyCode.DPadDown)
 
 ContextActionService:SetTitle("ShootOrSteal", "Shoot")
 ContextActionService:SetTitle("KeyCrossover", "Cross")

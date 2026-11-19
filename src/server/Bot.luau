@@ -5,18 +5,28 @@
 return function(Hoops, Vector3, CFrame)
 	local Brain = {}
 
-	-- How good it is. Medium: beatable, but it punishes lazy defense and lazy offense.
-	Brain.SKILL = {
-		reaction = 0.2, -- it sees the ball handler this many seconds late (defense)
-		shotSpread = 0.07, -- how far its releases land from perfect, typically (seconds)
-		stealRate = 0.3, -- chance it swipes when the ball's in reach (at most every 0.4s)
-		blockRate = 0.7, -- chance it jumps at a shot it's right on
-		moveRate = 0.55, -- chance per think it breaks out a dribble move when pressured
-		chainRate = 0.4, -- chance it chains a second move
-		openShot = 5, -- space (studs) it wants before pulling up
-		shotClock = 9, -- seconds into a possession before it just shoots
+	-- How good it is, by level. Medium: beatable, but it punishes lazy defense and lazy offense.
+	--   reaction: it sees the ball handler this many seconds late (defense)
+	--   shotSpread: how far its releases land from perfect, typically (seconds)
+	--   stealRate: chance it swipes when the ball's in reach (at most every 0.4s)
+	--   blockRate: chance it jumps at a shot it's right on
+	--   moveRate / chainRate: chance per think it breaks out a dribble move under pressure / chains a second
+	--   openShot: space (studs) it wants before pulling up; shotClock: seconds before it just shoots
+	--   biteRate: chance it bites on your dribble move (freezes a moment, like getting your ankles taken)
+	Brain.LEVELS = {
+		Easy = { reaction = 0.32, shotSpread = 0.11, stealRate = 0.15, blockRate = 0.4, moveRate = 0.35, chainRate = 0.2, openShot = 6, shotClock = 9, biteRate = 0.5 },
+		Medium = { reaction = 0.2, shotSpread = 0.07, stealRate = 0.3, blockRate = 0.7, moveRate = 0.55, chainRate = 0.4, openShot = 5, shotClock = 9, biteRate = 0.3 },
+		Hard = { reaction = 0.12, shotSpread = 0.045, stealRate = 0.45, blockRate = 0.85, moveRate = 0.7, chainRate = 0.6, openShot = 4, shotClock = 9, biteRate = 0.15 },
 	}
+	Brain.SKILL = {}
 	local SKILL = Brain.SKILL
+	function Brain.setLevel(name)
+		for k, v in Brain.LEVELS[name] do
+			SKILL[k] = v
+		end
+		Brain.level = name
+	end
+	Brain.setLevel("Medium")
 
 	local RIM = Vector3.new(0, Hoops.RIM_Y, Hoops.RIM_Z)
 	local ZERO = Vector3.new(0, 0, 0)
@@ -40,7 +50,7 @@ return function(Hoops, Vector3, CFrame)
 	Brain.inCourt, Brain.rightOf = inCourt, rightOf
 
 	-- Offense. s = { now, me = { pos, vel }, opp = { pos, vel } or nil, hand, busy (a move or shot is under
-	-- way), possessionAge, mind (its memory, kept by the caller), rng }.
+	-- way), possessionAge, mustClear (take it back past the arc first), mind (its memory, kept by the caller), rng }.
 	-- Returns { dir, sprint, face, act } where act is nil, { kind = "move", name, chain } or
 	-- { kind = "shoot", finish, hold }.
 	function Brain.offense(s)
@@ -61,6 +71,17 @@ return function(Hoops, Vector3, CFrame)
 
 		if s.busy then -- mid-move: carry on the way it was going (dashes bring their own motion)
 			out.dir = mind.lastDir or ZERO
+			return out
+		end
+
+		-- Take it back: after a change of possession, dribble out past the arc before anything else.
+		if s.mustClear then
+			local out1 = flat(me.pos - RIM)
+			local clearSpot = Vector3.new(RIM.X, me.pos.Y, RIM.Z) + unit(if out1.Magnitude > 0.5 then out1 else Vector3.new(0, 0, 1)) * (Hoops.THREE_DIST + 2.5)
+			out.dir = unit(flat(inCourt(clearSpot, 1.5) - me.pos))
+			out.sprint = gap > 5
+			out.face = if out.sprint then nil else RIM
+			mind.lastDir = out.dir
 			return out
 		end
 
@@ -125,10 +146,21 @@ return function(Hoops, Vector3, CFrame)
 	end
 
 	-- Defense. s = { now, me = { pos, vel }, opp = { pos, vel } (the ball handler, as it sees them: late by
-	-- SKILL.reaction), canReach (its reach would touch the ball right now), shooting, shotKind, shotAge, mind, rng }.
+	-- SKILL.reaction), canReach (its reach would touch the ball right now), shooting, shotKind, shotAge,
+	-- newMove (the name of a dribble move the handler just started, if any), mind, rng }.
 	-- Returns { dir, sprint, stance, face, act } where act is nil, { kind = "steal" } or { kind = "block" }.
 	function Brain.defense(s)
 		local mind, rng, me, opp = s.mind, s.rng, s.me, s.opp
+		-- A dribble move right in front of it can freeze it for a moment (hesitations most of all).
+		if s.newMove and flat(opp.pos - me.pos).Magnitude < 7 then
+			local bite = SKILL.biteRate * (if s.newMove == "Hesitation" then 1.5 else 1)
+			if rng() < bite then
+				mind.bitUntil = s.now + 0.3 + rng() * 0.15
+			end
+		end
+		if s.now < (mind.bitUntil or 0) then
+			return { dir = ZERO, face = opp.pos } -- frozen: no steps, no swipes, no jumps
+		end
 		-- It sees the handler late, so it reads their momentum: it guards where they're heading. A change of
 		-- direction (a juke, a crossover) is what beats it, like a real defender.
 		local heading = opp.pos + flat(opp.vel) * (SKILL.reaction + 0.1)
@@ -140,7 +172,7 @@ return function(Hoops, Vector3, CFrame)
 		local toSpot = flat(spot - me.pos)
 		local distance = flat(opp.pos - me.pos).Magnitude
 		local out = { face = opp.pos, dir = if toSpot.Magnitude > 0.4 then unit(toSpot) else ZERO }
-		out.sprint = toSpot.Magnitude > 7
+		out.sprint = toSpot.Magnitude > 3.5 or flat(opp.vel).Magnitude > Hoops.WALK_SPEED + 1 -- keep pace with a sprinting handler
 		out.stance = toSpot.Magnitude < 1.5 and distance < 9 -- crouch only once in front: stance is slow to recover
 		if out.sprint then
 			out.face = nil

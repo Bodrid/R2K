@@ -51,6 +51,11 @@ do -- open from deep: pulls up within a few thinks
 	end
 	assert(shot, "takes the open three")
 end
+do -- take it back: after a change of possession it clears past the arc first, even from right at the rim
+	local at = RIM_FLOOR + Vector3.new(2, 0, 3)
+	local out = Brain.offense({ now = 0, me = still(at), opp = still(CHECK), hand = "Right", busy = false, possessionAge = 1, mustClear = true, mind = {}, rng = seeded(7) })
+	assert(not out.act and out.dir:Dot(flat(at - RIM_FLOOR).Unit) > 0.9, "clears the ball before shooting")
+end
 do -- the shot clock makes it shoot
 	local out = Brain.offense({ now = 0, me = still(CHECK), opp = still(CHECK + Vector3.new(0, 0, -2)), hand = "Right", busy = false, possessionAge = 20, mind = {}, rng = seeded(3) })
 	assert(out.act and out.act.kind == "shoot", "shoots when its clock runs out")
@@ -223,18 +228,28 @@ local function defenseTrial(seed, speed)
 	local driver, bot = CHECK, CHECK + Vector3.new(0, 0, -4)
 	local mind, history = {}, {}
 	local jukeAt, side = 0, 1
+	local moveAt, newMove = 0.6 + rng() * 0.6, nil
 	local between, counted = 0, 0
 	local badSwipes, swipes = 0, 0
 	local t, nextThink = 0, 0
 	local out = { dir = ZERO }
+	local beaten = false
 	while t < 8 do
 		local toRim = flat(RIM_FLOOR - driver)
-		if toRim.Magnitude < 9 then
+		if toRim.Magnitude < 9 then -- reached the paint: is the bot still between them and the rim?
+			local toBot = flat(bot - driver)
+			beaten = not (toBot.Magnitude < 6 and toBot.Magnitude > 0 and toBot.Unit:Dot(toRim.Unit) > math.cos(math.rad(60)))
 			break
 		end
 		if t >= jukeAt then
 			jukeAt = t + 0.5 + rng() * 0.6
 			side = if rng() < 0.5 then -1 else 1
+		end
+		if t >= moveAt then -- a dribble move: cross over and go the other way
+			moveAt = t + 0.9 + rng() * 0.6
+			newMove = if rng() < 0.3 then "Hesitation" else "Crossover"
+			side = -side
+			jukeAt = t + 0.5 + rng() * 0.6
 		end
 		local dir = (toRim.Unit + Brain.rightOf(toRim.Unit) * side * 0.9).Unit
 		driver = step(driver, dir, speed)
@@ -249,12 +264,14 @@ local function defenseTrial(seed, speed)
 			local ballAt = Hoops.ballSpot(driverCF, "Right", nil, nil, 0, t)
 			local botCF = CFrame.lookAt(bot, bot + flat(driver - bot) + Vector3.new(0, 0, 1e-3))
 			local canReach = flat(driver - bot).Magnitude <= Hoops.STEAL_RANGE and Hoops.reaches(botCF, ballAt)
-			out = Brain.defense({ now = t, me = still(bot), opp = { pos = history[1].pos, vel = history[1].vel }, canReach = canReach, shooting = false, mind = mind, rng = rng })
+			out = Brain.defense({ now = t, me = still(bot), opp = { pos = history[1].pos, vel = history[1].vel }, canReach = canReach, shooting = false, newMove = newMove, mind = mind, rng = rng })
+			newMove = nil
 			if out.act and out.act.kind == "steal" then
 				swipes += 1
 				badSwipes += if canReach then 0 else 1
 			end
 		end
+		out.dir = out.dir or ZERO
 		local botSpeed = if out.stance then Hoops.STANCE_SPEED elseif out.sprint then Hoops.SPRINT_SPEED else Hoops.WALK_SPEED
 		bot = separate(step(bot, out.dir, botSpeed), driver)
 		-- in position: between the driver and the rim, within a few studs
@@ -265,7 +282,7 @@ local function defenseTrial(seed, speed)
 		end
 		t += DT
 	end
-	return between / math.max(counted, 1), swipes, badSwipes
+	return between / math.max(counted, 1), swipes, badSwipes, beaten
 end
 
 do
@@ -281,6 +298,25 @@ do
 		assert(sum / 200 >= case[2], `stays in front of a {case[3]} driver`)
 		assert(bad == 0, "never swipes at a ball out of reach")
 	end
+end
+
+-- Levels: each step up gets blown by less. Drives use moves, so the bot has to not bite.
+do
+	local blowBys = {}
+	for _, level in { "Easy", "Medium", "Hard" } do
+		Brain.setLevel(level)
+		local n = 0
+		for seed = 1, 300 do
+			local _, _, _, beaten = defenseTrial(seed, Hoops.WALK_SPEED)
+			n += if beaten then 1 else 0
+		end
+		blowBys[level] = n / 300
+	end
+	Brain.setLevel("Medium")
+	print(string.format("levels: blown by on a drive easy %d%%, medium %d%%, hard %d%%", math.floor(blowBys.Easy * 100), math.floor(blowBys.Medium * 100), math.floor(blowBys.Hard * 100)))
+	assert(blowBys.Easy > blowBys.Medium and blowBys.Medium > blowBys.Hard, "harder levels get blown by less")
+	assert(blowBys.Medium > 0.05 and blowBys.Medium < 0.6, "on medium, good moves beat it sometimes, not always")
+	assert(Brain.LEVELS.Easy.shotSpread > Brain.LEVELS.Medium.shotSpread and Brain.LEVELS.Medium.shotSpread > Brain.LEVELS.Hard.shotSpread, "and shoot straighter")
 end
 
 -- Loose ball: it runs the ball down.

@@ -199,6 +199,8 @@ local scored = new("RemoteEvent", { Name = "Scored", Parent = ReplicatedStorage 
 -- like a player (.Character, .UserId, .Name, .DisplayName); its UserId is negative, never a real player's.
 local bots = {}
 local botsFolder = new("Folder", { Name = "Bots", Parent = workspace })
+local Brain = require(script.Parent.Bot)(Hoops, Vector3, CFrame) -- the practice bot's brain
+botsFolder:SetAttribute("Level", Brain.level)
 local function participants()
 	local list = Players:GetPlayers()
 	for _, bot in bots do
@@ -230,6 +232,7 @@ local nextBlock = {} -- os.clock() when they may block again
 local blocking = {} -- os.clock() until their block stays live
 local points, wins = {}, {} -- this game's points and total wins (players also see them in the leaderboard)
 local lastShot = nil -- { player, points } until the ball is caught
+local lastPossessor = nil -- who had the ball last (an offensive rebound needn't be taken back)
 local pickupLockUntil, pickupLockPlayer = 0, nil
 local prevY = ball.Position.Y
 
@@ -245,7 +248,11 @@ end
 
 -- Held-ball state lives in attributes with server-clock times, so everyone computes the same ball (Hoops.ballSpot).
 -- Set before Holder, so a client sees a new possession already in sync.
-local function give(p)
+-- checked: given at the top of the key (check ball). Otherwise, a change of possession (a steal, a defensive
+-- rebound, a picked-off pass) has to be taken back past the arc before it can score, like 2K's park.
+local function give(p, checked)
+	ball:SetAttribute("MustClear", if checked or p == lastPossessor then nil else true)
+	lastPossessor = p
 	ball.Anchored = true
 	ball.CanCollide = false
 	ball:SetAttribute("Hand", "Right")
@@ -336,7 +343,7 @@ local function checkBall(offense)
 		end
 	end
 	if rootOf(offense) then
-		give(offense)
+		give(offense, true)
 	end
 end
 
@@ -409,7 +416,8 @@ local function shoot(p, root, holdTime)
 		target += Vector3.new(math.cos(a), 0, math.sin(a)) * Hoops.RIM_RADIUS -- aim at the iron: a real clank and rebound
 	end
 
-	lastShot = { player = p, points = dist >= Hoops.THREE_DIST and 3 or 2 }
+	-- an uncleared shot can still go in, it just doesn't count
+	lastShot = { player = p, points = if ball:GetAttribute("MustClear") then 0 elseif dist >= Hoops.THREE_DIST then 3 else 2 }
 	local from = heldSpot(root) -- wherever the ball is on the shot's path
 	local t = Hoops.flightTime(dist)
 	release(from, Hoops.launchVelocity(from, target, t, Vector3.new(0, -workspace.Gravity, 0)))
@@ -499,6 +507,12 @@ function act.block(p, root)
 	end
 end
 
+function act.level(_) -- practice: the bot's difficulty, Easy -> Medium -> Hard -> Easy
+	local nextLevel = { Easy = "Medium", Medium = "Hard", Hard = "Easy" }
+	Brain.setLevel(nextLevel[Brain.level])
+	botsFolder:SetAttribute("Level", Brain.level)
+end
+
 function act.drill(_) -- practice: the bot gets the ball at the top of the key, so you can work on your defense
 	local bot = bots[1]
 	if bot and rootOf(bot) then
@@ -529,6 +543,9 @@ RunService.Heartbeat:Connect(function()
 		if not hRoot then
 			release(CENTER, Vector3.zero) -- holder left or died
 			return
+		end
+		if ball:GetAttribute("MustClear") and ((hRoot.Position - RIM) * FLAT).Magnitude >= Hoops.THREE_DIST then
+			ball:SetAttribute("MustClear", nil) -- taken back past the arc: live ball
 		end
 		-- Live blocks and reaches: the server knows exactly where the ball is (side, bounce height, crossover,
 		-- gather), so only real contact counts.
@@ -565,7 +582,9 @@ RunService.Heartbeat:Connect(function()
 	if lastShot and prevY > RIM.Y and pos.Y <= RIM.Y and ((pos - RIM) * FLAT).Magnitude < Hoops.RIM_RADIUS then
 		local shot = lastShot
 		lastShot = nil
-		if table.find(participants(), shot.player) then -- not if the shooter left mid-shot
+		if shot.points == 0 then
+			scored:FireAllClients(shot.player.UserId, shot.player.DisplayName, 0) -- "take it back": no basket
+		elseif table.find(participants(), shot.player) then -- not if the shooter left mid-shot
 			points[shot.player] = (points[shot.player] or 0) + shot.points
 			local stat = leaderstat(shot.player, "Points")
 			if stat then
@@ -598,7 +617,6 @@ end)
 -- Appears when someone's alone, leaves when a second player joins. Its brain (Bot.luau, tested in
 -- tests/bot.spec.luau) decides ~10 times a second; this part gives it a body: movement, facing, dashes,
 -- animations, and its actions through `act` like anyone else.
-local Brain = require(script.Parent.Bot)(Hoops, Vector3, CFrame)
 local BOT_ID = -424242
 local LOCOMOTION = { idle = 507766666, run = 507767714 } -- Roblox's own default R15 animations
 
@@ -765,7 +783,8 @@ local function botThink(bot, root)
 		out = Brain.offense({
 			now = now, me = me, opp = oppRoot and { pos = oppRoot.Position, vel = oppRoot.AssemblyLinearVelocity },
 			hand = ball:GetAttribute("Hand"), busy = bot.shooting or #bot.queue > 0 or serverNow < moveEndsAt(),
-			possessionAge = now - bot.possessionAt, mind = bot.mind, rng = math.random,
+			possessionAge = now - bot.possessionAt, mustClear = ball:GetAttribute("MustClear") == true,
+			mind = bot.mind, rng = math.random,
 		})
 	else
 		bot.possessionAt = nil
@@ -774,11 +793,19 @@ local function botThink(bot, root)
 		if hRoot then
 			local seen = seenLate(bot, h, hRoot)
 			local shooting = ball:GetAttribute("GatherAt") ~= nil
+			-- a dribble move the handler just started (it might bite)
+			local moveName, moveAt = ball:GetAttribute("Move"), ball:GetAttribute("MoveAt")
+			local newMove = nil
+			if moveAt ~= bot.lastMoveAt then
+				bot.lastMoveAt = moveAt
+				local move = Hoops.MOVES[moveName or ""]
+				newMove = if move and not move.finish then moveName else nil
+			end
 			out = Brain.defense({
 				now = now, me = me, opp = { pos = seen.pos, vel = seen.vel },
 				canReach = (hRoot.Position - root.Position).Magnitude <= Hoops.STEAL_RANGE and Hoops.reaches(root.CFrame, heldSpot(hRoot)),
-				shooting = shooting, shotKind = ball:GetAttribute("Move"), shotAge = serverNow - (ball:GetAttribute("MoveAt") or serverNow),
-				mind = bot.mind, rng = math.random,
+				shooting = shooting, shotKind = moveName, shotAge = serverNow - (moveAt or serverNow),
+				newMove = newMove, mind = bot.mind, rng = math.random,
 			})
 		else
 			out = Brain.chase({ me = me, ballPos = ball.Position, ballVel = ball.AssemblyLinearVelocity })

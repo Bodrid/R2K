@@ -24,7 +24,11 @@ To play 1v1 locally, open the Test tab in Studio, set Clients and Servers to 2 p
 
 ## Practice bot
 
-Alone in a server, a practice bot in a red jersey joins and plays you to 21. It leaves when a second real player joins. Press **P** (D-pad up on a controller) to give it the ball at the top of the key, for defense practice.
+Alone in a server, a practice bot in a red jersey joins and plays you to 21. It leaves when a second real player joins.
+
+- **Defense drill:** press **P** (D-pad up) to give it the ball at the top of the key.
+- **Difficulty:** press **O** (D-pad down) to cycle Easy, Medium and Hard. The current level shows at the bottom of the screen.
+- **Biting on moves:** dribble moves can make it bite and freeze for a moment, like getting your ankles taken. In the simulations it gets blown by on about 54% of drives on Easy, 28% on Medium and 14% on Hard.
 
 It plays by the same rules as you:
 - **Its actions:** it moves, shoots, steals and blocks through the same server checks your buttons go through, so it can't cheat.
@@ -80,6 +84,8 @@ The controller layout follows 2K.
 **Facing:**
 - **With the ball:** you always face the basket, unless you're sprinting.
 - **Intense D (hold L2 on defense):** you drop into a stance and slide facing the ball handler. You move slower, but you contest shots from further away.
+
+**Take it back:** after a change of possession (a steal, a defensive rebound, a picked-off pass), you have to take the ball back past the 3-point line before you can score. TAKE IT BACK shows on screen until you do, and a basket made before clearing doesn't count. Check balls and offensive rebounds don't need clearing.
 
 **Shots:** shoot near the rim to finish with a layup, or a dunk when very close. Further out, it's a jump shot. After you release, the screen says how your timing was: GREEN!, Slightly Early, Very Late, and so on.
 
