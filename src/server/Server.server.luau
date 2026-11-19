@@ -100,7 +100,7 @@ local function give(player)
 end
 
 local function heldSpot(hRoot)
-	return Hoops.ballSpot(hRoot.CFrame, ball:GetAttribute("Hand"), ball:GetAttribute("Move"), ball:GetAttribute("MoveHand"), ball:GetAttribute("MoveAt"), ball:GetAttribute("GatherAt"), workspace:GetServerTimeNow())
+	return Hoops.ballSpot(hRoot.CFrame, ball:GetAttribute("Hand"), ball:GetAttribute("Move"), ball:GetAttribute("MoveHand"), ball:GetAttribute("MoveAt"), workspace:GetServerTimeNow())
 end
 
 -- Start a dribble move or finish on the ball. Uses the client's start time so its path lines up with ours,
@@ -240,13 +240,13 @@ action.OnServerEvent:Connect(function(player, kind, value, at)
 	elseif kind == "shootStart" then
 		if h == player then
 			shootStarts[player] = os.clock()
-			-- Near the rim the client asks for a layup or dunk; check it's really in range (with slack for ping).
+			-- Every shot is a path (Hoops.MOVES). Near the rim the client asks for a layup or dunk: check it's really in
+			-- range (with slack for ping), otherwise it's a jump shot.
 			local finish = Hoops.MOVES[value]
 			local rimDist = ((root.Position - RIM) * FLAT).Magnitude
-			if finish and finish.finish and rimDist <= (if value == "Layup" then Hoops.LAYUP_RANGE else Hoops.DUNK_RANGE) + 3 then
-				startPath(value, at)
-			end
-			ball:SetAttribute("GatherAt", workspace:GetServerTimeNow()) -- so everyone else sees the gather
+			local inRange = rimDist <= (if value == "Layup" then Hoops.LAYUP_RANGE else Hoops.DUNK_RANGE) + 3
+			startPath(if finish and finish.finish and (value == "JumpShot" or inRange) then value else "JumpShot", at)
+			ball:SetAttribute("GatherAt", workspace:GetServerTimeNow()) -- marks a shot under way (no steals)
 		end
 	elseif kind == "shoot" then
 		local started = shootStarts[player]

@@ -1,6 +1,6 @@
 -- Calibrates the game to the animations: measures where the animated hands really are (on the real rig)
 -- and rewrites the ball spots in src/shared/Hoops.luau to match: the dribble spot, every move's ball path,
--- the shot windup, the blocker's hands and the steal reach. Timing and hands come from Hoops.MOVES.
+-- the blocker's hands and the steal reach. Timing and hands come from Hoops.MOVES.
 -- Run from the repo root after changing animations: lune run tools/preview/fit
 local fs = require("@lune/fs")
 local roblox = require("@lune/roblox")
@@ -75,20 +75,6 @@ do
 	fitted.HAND_LOW = math.max(fitted.DRIBBLE_TOP + R - 0.4, lowest)
 end
 
--- Shot windup: between the hands at the jump shot's set point (where it holds while the meter fills), but
--- out in front of the face (heads are solid: a shot launched inside one bounces off the shooter), and
--- lowered if needed so both hands can still reach the ball's sides.
-do
-	local parts, root = Rig.at("JumpShot", 0.35)
-	local _, up, forward = body(root, (parts.RightHand.Position + parts.LeftHand.Position) / 2)
-	local _, _, headForward = body(root, parts.Head.Position)
-	forward = math.max(forward, headForward + Rig.rig.sizes.Head[3] / 2 + R + 0.05)
-	local s = shoulder("JumpShot", 0.35)
-	while (Vector3.new(R + 0.2, up, forward) - s).Magnitude > 0.95 * REACH do
-		up -= 0.02
-	end
-	fitted.GATHER_HEIGHT, fitted.GATHER_FORWARD = up, forward
-end
 local _
 -- Block: between the raised hands at the top of the block.
 _, fitted.BLOCK_HEIGHT, fitted.BLOCK_FORWARD = between("Block", 0.25, "RightHand", "LeftHand")
@@ -138,7 +124,17 @@ for _, name in names do
 			out[i] = { k[1], right, "floor", forward, k[5] }
 		end
 	end
-	local extra = if move.finish then `, finish = true, jumpAt = {move.jumpAt}` else ""
+	local extra = (if move.finish then ", finish = true" else "") .. (if move.jumpAt then `, jumpAt = {move.jumpAt}` else "")
+	if move.finish then -- the shot launches from the release point: it must clear the head (heads are solid)
+		local release = out[#out]
+		local parts, root = Rig.at(name, release[1])
+		local hx, hy, hz = body(root, parts.Head.Position)
+		local size = Rig.rig.sizes.Head
+		local dx = math.max(math.abs(release[2] - hx) - size[1] / 2, 0)
+		local dy = math.max(math.abs(release[3] - hy) - size[2] / 2, 0)
+		local dz = math.max(math.abs(release[4] - hz) - size[3] / 2, 0)
+		assert(math.sqrt(dx * dx + dy * dy + dz * dz) > R, `{name}: the release point is inside the head; move the hands out in its animation`)
+	end
 	table.insert(lines, `\t{name} = \{ switch = {move.switch}{extra}, path = \{`)
 	for _, k in out do
 		local fields = {}

@@ -141,13 +141,20 @@ fs.writeDir("assets/animations")
 
 build("JumpShot", {
 	{ 0, {} },
-	{ 0.2, crouch(0.5, { -- dip, ball set by the forehead
-		RightUpperArm = rot(110),
+	{ 0.2, crouch(0.5, { -- dip, both hands bring the ball up to the chest
+		RightUpperArm = rot(45, 0, -20),
 		RightLowerArm = rot(100),
-		LeftUpperArm = rot(100),
-		LeftLowerArm = rot(80),
+		LeftUpperArm = rot(45, 0, 20),
+		LeftLowerArm = rot(100),
 	}) },
-	{ 0.45, { -- rise and release: shooting arm up, wrist flicks, guide hand off
+	{ 0.35, { -- set point (the game holds here while the meter fills): ball up in front of the face,
+		-- far enough out to clear the head
+		RightUpperArm = rot(110), -- measured on the rig (tools/preview): clears the head with ~0.15 to spare
+		RightLowerArm = rot(20),
+		LeftUpperArm = rot(110),
+		LeftLowerArm = rot(20),
+	} },
+	{ 0.5, { -- release: shooting arm up, wrist flicks, guide hand off
 		RightUpperArm = rot(170),
 		RightLowerArm = rot(10),
 		RightHand = rot(60),

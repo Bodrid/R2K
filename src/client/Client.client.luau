@@ -83,7 +83,7 @@ end
 
 -- While I hold the ball I predict my own state (server-clock times) so my moves start instantly;
 -- for everyone else I read the server's attributes.
-local myHand, myMove, myMoveHand, myMoveAt, myGatherAt = "Right", nil, nil, 0, nil
+local myHand, myMove, myMoveHand, myMoveAt = "Right", nil, nil, 0
 local myBlockAt = 0
 local shootStart = nil -- os.clock() when I started holding shoot (for the meter)
 
@@ -93,9 +93,8 @@ end
 
 ball:GetAttributeChangedSignal("Holder"):Connect(function()
 	-- The server sets these before Holder, so a new possession starts in sync with it.
-	-- Clearing myGatherAt here also holds a released shot's gather until the server takes the ball.
 	myHand, myMove, myMoveHand = ball:GetAttribute("Hand") or "Right", ball:GetAttribute("Move"), ball:GetAttribute("MoveHand")
-	myMoveAt, myGatherAt = ball:GetAttribute("MoveAt") or 0, nil
+	myMoveAt = ball:GetAttribute("MoveAt") or 0
 end)
 
 RunService.RenderStepped:Connect(function()
@@ -135,8 +134,7 @@ RunService.RenderStepped:Connect(function()
 			local move = if mine then myMove else ball:GetAttribute("Move")
 			local moveHand = if mine then myMoveHand else ball:GetAttribute("MoveHand")
 			local moveAt = (if mine then myMoveAt else ball:GetAttribute("MoveAt")) or 0
-			local gatherAt = if mine then myGatherAt else ball:GetAttribute("GatherAt")
-			pos, ballSide, hold = Hoops.ballSpot(cf, hand, move, moveHand, moveAt, gatherAt, now)
+			pos, ballSide, hold = Hoops.ballSpot(cf, hand, move, moveHand, moveAt, now)
 			ball.CFrame = CFrame.new(pos)
 		end
 
@@ -264,34 +262,33 @@ ContextActionService:BindAction("ShootOrSteal", function(_, state)
 	if state == Enum.UserInputState.Begin then
 		if iHaveBall() then
 			local now = workspace:GetServerTimeNow()
-			shootStart, myGatherAt = os.clock(), now
+			shootStart = os.clock()
 			fill.Size = UDim2.fromScale(1, 0)
 			meter.Visible = true
 			local root = myRoot()
 			local rimDist = root and Vector3.new(root.Position.X, 0, root.Position.Z - Hoops.RIM_Z).Magnitude or math.huge
-			if rimDist <= Hoops.LAYUP_RANGE then
-				-- Layup or dunk: the ball follows the finish's path (predicted here, checked by the server), and
-				-- the jump waits for the animation's takeoff. Like any move, it starts once the last one ends.
-				local finish = if rimDist > Hoops.DUNK_RANGE then "Layup" elseif math.random() < 0.3 then "DunkTwoHand" else "Dunk"
-				local last = Hoops.MOVES[myMove or ""]
-				local startAt = math.max(now, if last then myMoveAt + last.duration else now)
-				myMove, myMoveHand, myMoveAt = finish, myHand, startAt
-				action:FireServer("shootStart", finish, startAt)
-				play(if finish == "DunkTwoHand" then finish else sided(finish))
-				task.delay(startAt - now + Hoops.MOVES[finish].jumpAt, function()
-					local hum = me.Character and me.Character:FindFirstChildOfClass("Humanoid")
-					if hum and iHaveBall() and myMove == finish then -- still holding it: not released, stolen or blocked
-						hum.Jump = true
+			-- Every shot is a path (Hoops.MOVES), predicted here and checked by the server: a jump shot, or near the
+			-- rim a layup or dunk. Like any move, it starts once the last one ends.
+			local finish = if rimDist > Hoops.LAYUP_RANGE then "JumpShot" elseif rimDist > Hoops.DUNK_RANGE then "Layup" elseif math.random() < 0.3 then "DunkTwoHand" else "Dunk"
+			local last = Hoops.MOVES[myMove or ""]
+			local startAt = math.max(now, if last then myMoveAt + last.duration else now)
+			myMove, myMoveHand, myMoveAt = finish, myHand, startAt
+			action:FireServer("shootStart", finish, startAt)
+			if finish == "JumpShot" then
+				-- rise to the set point, hold it while the meter fills, release when you let go
+				jumpShot = play("JumpShot")
+				local started = shootStart
+				task.delay(startAt - now + Hoops.MOVES.JumpShot.duration, function()
+					if jumpShot and shootStart == started then
+						jumpShot:AdjustSpeed(0)
 					end
 				end)
 			else
-				action:FireServer("shootStart")
-				-- Jump shot: rise to the set point, hold it while the meter fills, release when you let go.
-				jumpShot = play("JumpShot")
-				local started = shootStart
-				task.delay(0.35, function()
-					if jumpShot and shootStart == started then
-						jumpShot:AdjustSpeed(0)
+				play(if finish == "DunkTwoHand" then finish else sided(finish))
+				task.delay(startAt - now + Hoops.MOVES[finish].jumpAt, function() -- jump at the animation's takeoff
+					local hum = me.Character and me.Character:FindFirstChildOfClass("Humanoid")
+					if hum and iHaveBall() and myMove == finish then -- still holding it: not released, stolen or blocked
+						hum.Jump = true
 					end
 				end)
 			end

@@ -26,20 +26,19 @@ local CFrame, Vector3 = roblox.CFrame, roblox.Vector3
 local Y = Hoops.FLOOR_Y + Hoops.RIG_HIP_HEIGHT + 1 -- standing root height of the calibrated rig (hip height + half the root)
 local handler = CFrame.lookAt(Vector3.new(0, Y, 0), Vector3.new(0, Y, -1))
 local T = 1000 -- any server time
-local function spot(hand, move, moveHand, moveAt, gatherAt, now)
-	return (Hoops.ballSpot(handler, hand, move, moveHand, moveAt, gatherAt, now))
+local function spot(hand, move, moveHand, moveAt, now)
+	return (Hoops.ballSpot(handler, hand, move, moveHand, moveAt, now))
 end
 local function near(a, b)
 	return (a - b).Magnitude < 1e-3
 end
 local floorY = Hoops.FLOOR_Y + Hoops.BALL_RADIUS
-local right = spot("Right", nil, nil, T, nil, T) -- a new dribble: top of the bounce, right side
-local left = spot("Left", nil, nil, T, nil, T)
-local low = spot("Right", nil, nil, T, nil, T + 0.5 / Hoops.DRIBBLE_HZ) -- half a bounce later
+local right = spot("Right", nil, nil, T, T) -- a new dribble: top of the bounce, right side
+local left = spot("Left", nil, nil, T, T)
+local low = spot("Right", nil, nil, T, T + 0.5 / Hoops.DRIBBLE_HZ) -- half a bounce later
 assert(right.X > 0 and left.X < 0, "hand picks the side")
 assert(math.abs(right.Y - (Y + Hoops.DRIBBLE_TOP)) < 1e-3, "a new dribble starts at the top")
 assert(math.abs(low.Y - floorY) < 1e-3, "half a bounce later the ball is on the floor")
-assert(near(spot("Right", nil, nil, T - 5, T, T + Hoops.GATHER_TIME), Hoops.gatherSpot(handler)), "a gathered ball sits at the gather spot")
 
 -- Dribble moves: every path joins the dribble cleanly at both ends and lasts as long as its animation.
 local fs = require("@lune/fs")
@@ -48,16 +47,16 @@ for name, move in Hoops.MOVES do
 	for i = 2, #move.path do
 		assert(move.path[i][1] > move.path[i - 1][1], `{name}: path times go forward`)
 	end
-	assert(near(spot(endHand, name, "Right", T, nil, T), right), `{name}: starts at the top of the dribble`)
-	local before, after = spot(endHand, name, "Right", T, nil, T + move.duration - 1e-6), spot(endHand, name, "Right", T, nil, T + move.duration)
+	assert(near(spot(endHand, name, "Right", T, T), right), `{name}: starts at the top of the dribble`)
+	local before, after = spot(endHand, name, "Right", T, T + move.duration - 1e-6), spot(endHand, name, "Right", T, T + move.duration)
 	if move.finish then -- a finish waits at its release point until the shot goes up (even mid-windup)
-		assert(near(spot(endHand, name, "Right", T, T, T + move.duration + 0.5), after), `{name}: waits at the release point`)
-		assert(move.jumpAt < move.duration, `{name}: takes off before the release`)
+		assert(near(spot(endHand, name, "Right", T, T + move.duration + 0.5), after), `{name}: waits at the release point`)
+		assert(not move.jumpAt or move.jumpAt < move.duration, `{name}: takes off before the release`)
 	else
 		assert(near(before, after) and near(after, if move.switch then left else right), `{name}: hands back to the dribble on the right side`)
 	end
-	local mirrored = spot(if move.switch then "Right" else "Left", name, "Left", T, nil, T + move.duration / 2)
-	local original = spot(endHand, name, "Right", T, nil, T + move.duration / 2)
+	local mirrored = spot(if move.switch then "Right" else "Left", name, "Left", T, T + move.duration / 2)
+	local original = spot(endHand, name, "Right", T, T + move.duration / 2)
 	assert(near(mirrored, Vector3.new(-original.X, original.Y, original.Z)), `{name}: the left-hand version is a mirror`)
 	local animation = roblox.deserializeModel(fs.readFile(`assets/animations/{name}.rbxmx`))[1]
 	local length = 0
@@ -70,9 +69,9 @@ for name, move in Hoops.MOVES do
 		assert(math.abs(length - move.duration) < 0.01, `{name}: ball path lasts {move.duration}s but the animation lasts {length}s`)
 	end
 end
-local crossBounce = spot("Left", "Crossover", "Right", T, nil, T + 0.25)
+local crossBounce = spot("Left", "Crossover", "Right", T, T + 0.25)
 assert(math.abs(crossBounce.X) < 0.35 and crossBounce.Z < 0 and math.abs(crossBounce.Y - floorY) < 1e-3, "a crossover bounces in front, between the feet (hips are 0.35 either side)")
-assert(spot("Left", "BehindBack", "Right", T, nil, T + 0.26).Z > 0, "a behind-the-back goes behind the body")
+assert(spot("Left", "BehindBack", "Right", T, T + 0.26).Z > 0, "a behind-the-back goes behind the body")
 -- Top of the head above the root, standing, from the calibrated rig (root -> lower torso -> upper torso -> head).
 local rig = require("@lune/serde").decode("json", fs.readFile("tools/preview/r15-rig.json"))
 local HEAD_TOP = rig.sizes.Head[2] / 2
@@ -84,9 +83,9 @@ end
 local function headTop(spotAt) -- how far above the top of the head a ball is
 	return spotAt.Y - Y - HEAD_TOP
 end
-assert(headTop(spot("Right", "Dunk", "Right", T, T, T + 0.5)) > 0, "a dunk takes the ball up over the head")
-assert(headTop(spot("Right", "Layup", "Right", T, T, T + Hoops.MOVES.Layup.duration)) > -0.5, "a layup releases up high at full stretch")
-local spinHalf = spot("Right", "SpinMove", "Right", T, nil, T + 0.3)
+assert(headTop(spot("Right", "Dunk", "Right", T, T + 0.5)) > 0, "a dunk takes the ball up over the head")
+assert(headTop(spot("Right", "Layup", "Right", T, T + Hoops.MOVES.Layup.duration)) > -0.5, "a layup releases up high at full stretch")
+local spinHalf = spot("Right", "SpinMove", "Right", T, T + 0.3)
 assert(spinHalf.Z > 0 and spinHalf.X < 0, "halfway through a spin the ball has swung round behind, to the far side")
 
 -- Steal contact: the defender's hands must actually touch the ball where it is right now.
@@ -101,7 +100,7 @@ assert(not Hoops.reaches(defenderAt(0, 3), right), "no reaching around from behi
 -- (a shot windup can't be stolen at all: the server ignores reaches while a shot is gathering)
 
 -- Block contact: raised hands must touch the ball where it is right now.
-local gathered = Hoops.gatherSpot(handler)
+local gathered = spot("Right", "JumpShot", "Right", T, T + 2) -- a jump shot held at its set point
 assert(Hoops.blocks(defenderAt(0, -2.5), gathered), "in your face, a block reaches the windup")
 assert(not Hoops.blocks(defenderAt(0, -5), gathered), "from too far, a block can't reach the windup")
 assert(not Hoops.blocks(defenderAt(0, -2.5), right), "a dribble is too low to block")

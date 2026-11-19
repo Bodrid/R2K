@@ -26,9 +26,6 @@ local Hoops = {
 	HAND_LOW = -0.937, -- the dribble hand follows the ball down to here, then waits
 	RIG_HIP_HEIGHT = 2, -- the calibrated body's hip height; the server warns if players' bodies don't match
 	SHOULDER_UP = 0.763, -- a one-hand ball above shoulder height sits on the palm (layups, dunks); below it the hand is on top
-	GATHER_HEIGHT = 1.737, -- where the ball sits during the shot windup; the shot launches from here
-	GATHER_FORWARD = 1.249, -- in front of the face, in reach of R15 arms
-	GATHER_TIME = 0.2, -- seconds to bring the ball up into the shot
 
 	PERFECT_HOLD = 0.6, -- hold shoot this long for a perfect release
 	SHOT_WINDOW = 0.3, -- releasing this far off perfect is the worst timing
@@ -96,8 +93,9 @@ end
 -- hand: "R" or "L" (that hand has it), "both" (held in two hands), nil (in the air between hands), or "legs"
 -- (bouncing between the feet). up = "floor" is a bounce. Authored from the right hand; from the left hand the
 -- path is mirrored. Each path starts and ends at the top of the dribble, so moves join it seamlessly.
--- Finishes (finish = true: layups, dunks) start there too but end at the release: the ball waits there until
--- the shot goes up, and the shot launches from wherever the ball is. jumpAt: when the animation takes off.
+-- Finishes (finish = true: every shot, i.e. jump shots, layups and dunks) start there too but end at the release:
+-- the ball waits there until the shot goes up, and the shot launches from wherever the ball is.
+-- jumpAt: when the animation takes off (the character jumps).
 -- Positions are measured from the animations by tools/preview/fit.luau, which rewrites this block; edit
 -- timing and hands here, then re-run it.
 local S, T, F = Hoops.DRIBBLE_SIDE, Hoops.DRIBBLE_TOP, Hoops.DRIBBLE_FORWARD
@@ -163,6 +161,11 @@ Hoops.MOVES = {
 		{ 0.28, 2.276, -1.324, 0.373, "R" },
 		{ 0.38, 2.077, "floor", 0.636 },
 		{ 0.5, S, T, F, "R" },
+	} },
+	JumpShot = { switch = false, finish = true, path = {
+		{ 0, S, T, F, "R" },
+		{ 0.2, 0, 0.512, 1.119, "both" },
+		{ 0.35, 0, 1.581, 1.362, "both" },
 	} },
 	Layup = { switch = false, finish = true, jumpAt = 0.4, path = {
 		{ 0, S, T, F, "R" },
@@ -268,8 +271,8 @@ end
 --   hand: the hand it's in (after the current move), move/moveHand/moveAt: the dribble move under way,
 --   the hand it started from, and when (with no move, moveAt is when the dribble started)
 -- Also returns, for the arms, which hand has it (+1 right, -1 left, between = in the air) and how much it's
--- held in both hands (0..1: two-handed gathers and the shot windup).
-function Hoops.ballSpot(rootCFrame, hand, move, moveHand, moveAt, gatherAt, now)
+-- held in both hands (0..1: two-handed gathers and shots).
+function Hoops.ballSpot(rootCFrame, hand, move, moveHand, moveAt, now)
 	local floorUp = Hoops.FLOOR_Y + Hoops.BALL_RADIUS - rootCFrame.Position.Y -- root stays upright, so its up is world up
 	local m = move and Hoops.MOVES[move]
 	local finishing = m and m.finish
@@ -285,15 +288,7 @@ function Hoops.ballSpot(rootCFrame, hand, move, moveHand, moveAt, gatherAt, now)
 		local s = 1 - math.abs(math.cos(math.pi * Hoops.DRIBBLE_HZ * since))
 		right, up, forward, side, hold = sideOf(hand) * S, lerp(T, floorUp, s), F, sideOf(hand), 0
 	end
-	-- the jump shot gather (a finish's path already carries the ball up)
-	local g = if gatherAt and not finishing then math.clamp((now - gatherAt) / Hoops.GATHER_TIME, 0, 1) else 0
-	g = g * g * (3 - 2 * g) -- ease in and out
-	return offset(rootCFrame, lerp(right, 0, g), lerp(up, Hoops.GATHER_HEIGHT, g), lerp(forward, Hoops.GATHER_FORWARD, g)), side, math.max(hold, g)
-end
-
--- Where the ball sits during a shot windup; shots launch from here.
-function Hoops.gatherSpot(rootCFrame)
-	return offset(rootCFrame, 0, Hoops.GATHER_HEIGHT, Hoops.GATHER_FORWARD)
+	return offset(rootCFrame, right, up, forward), side, hold
 end
 
 -- Can the defender's reaching hand touch a ball at `spot`?

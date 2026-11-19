@@ -20,9 +20,7 @@ local function ballFor(name, root, t)
 	if move then
 		local startHand = if left then "Left" else "Right"
 		local endHand = if move.switch then (if left then "Right" else "Left") else startHand
-		return Hoops.ballSpot(root, endHand, base, startHand, 0, nil, t)
-	elseif base == "JumpShot" or base == "Layup" or base == "Dunk" or base == "DunkTwoHand" then
-		return Hoops.ballSpot(root, if left then "Left" else "Right", nil, nil, -10, 0, t) -- the shot gather
+		return Hoops.ballSpot(root, endHand, base, startHand, 0, t)
 	end
 	return nil
 end
